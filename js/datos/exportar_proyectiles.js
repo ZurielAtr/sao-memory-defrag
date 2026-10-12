@@ -1,19 +1,31 @@
 // Proyectiles (D48/D71): exportador compartido entre Node y el importador OPFS. Salida:
 // proyectiles/<id>.json = { disparos: {animación: [...]}, balas: {id: ficha} } para todos los personajes.
 // proyectiles_enemigos/<id>.json: mismo formato, desde enemy.f13, con defensa/estados de attack.
-// Qué es cada campo (y qué es DEDUCCIÓN): en el .py.
+// Física y rutas 4/57/87: Ghidra D72; los demás campos se conservan para investigar.
 
 import { get, o, verdad, ordenar, pyRound, aJSON, iterar } from './py.js';
 import { TIPOS_BUFF, buffDe, estadosDe, porId, eventos } from './comun.js';
 import { ssbpPacks, SUPPORTED } from './exportar_personajes.js';
 import { caja } from './exportar_cajas.js';
 
-const TIPOS_DISPARO = [4, 57]; // 4 confirmado en Ghidra (D71); 57 sigue deducido de character.f18
-const CRUDOS = ['f3', 'f7', 'f10', 'f12', 'f13', 'f21', 'f34', 'f35', 'f41', 'f47', 'f48', 'f49', 'f61', 'f65'];
+const TIPOS_DISPARO = [4, 57, 87];
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // Campos de una caja que usan punto() y caja(): se guarda solo eso (las animaciones ocupan mucho).
-const CAMPOS_CAJA = ['f0', 'f1', 'f2', 'f4', 'f5', 'f6', 'f7', 'f8'];
+const CAMPOS_CAJA = ['f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'];
 const compacta = (c) => (esDict(c) ? Object.fromEntries(CAMPOS_CAJA.filter((k) => k in c).map((k) => [k, c[k]])) : c);
+
+/** f5 contiene dos float32, incluidos los valores de 64 bits leídos como BigInt por el decoder. */
+function vec2(v) {
+  const buf = new DataView(new ArrayBuffer(8));
+  buf.setBigInt64(0, BigInt(v ?? 0), true);
+  return [buf.getFloat32(0, true), buf.getFloat32(4, true)];
+}
+
+function cajaBala(b) {
+  const out = caja(b);
+  if (get(b, 'f3', 0)) out.push(b.f3);
+  return out;
+}
 
 /** data/animation por unidad o bala, leído al pedirlo: Map(animación → Map(cuadro → [cajas])). */
 class Animaciones {
@@ -40,13 +52,15 @@ class Animaciones {
   }
 }
 
-/** [dx, dy] de la caja `salida` respecto de la caja 1 (origen) del cuadro, o null. */
+/** [dx, dy, ángulo opcional] de la caja de salida respecto del origen del cuadro. */
 function punto(cajas, salida) {
   const porIdC = new Map();
   for (const c of cajas) porIdC.set(get(c, 'f0', 0), c);
   if (!porIdC.has(salida)) return null;
   const or = porIdC.get(1) ?? {}, s = porIdC.get(salida);
-  return [pyRound(get(s, 'f1', 0) - get(or, 'f1', 0), 1), pyRound(get(s, 'f2', 0) - get(or, 'f2', 0), 1)];
+  const out = [pyRound(get(s, 'f1', 0) - get(or, 'f1', 0), 1), pyRound(get(s, 'f2', 0) - get(or, 'f2', 0), 1)];
+  if (get(s, 'f3', 0)) out.push(s.f3);
+  return out;
 }
 
 /** [[cuadro, evento]] de una entrada de eventos por cuadro, por cuadro. */
@@ -56,7 +70,7 @@ function eventosDe(anim) {
   return ordenar(out, (x) => x[0]);
 }
 
-/** Tramos [desde, hasta, tipo, id, caja] de golpes (tipo 1) y disparos de balas hijas (4/57). */
+/** Tramos [desde,hasta,tipo,id,caja[,f4[,vec2]]] de golpes y disparos de balas hijas. */
 function tramos(anim, attacks, bullets) {
   const out = [];
   for (const [cuadro, ev] of eventosDe(anim)) {
@@ -65,7 +79,12 @@ function tramos(anim, attacks, bullets) {
     const clave = [tipo, ref, get(ev, 'f1')];
     const prev = out.find((t) => t[2] === clave[0] && t[3] === clave[1] && t[4] === clave[2] && cuadro - 1 <= t[1] && t[1] <= cuadro);
     if (prev && tipo === 1) prev[1] = cuadro;
-    else out.push([cuadro, cuadro, ...clave]);
+    else {
+      const tramo = [cuadro, cuadro, ...clave];
+      if (TIPOS_DISPARO.includes(tipo)) tramo.push(get(ev, 'f4', 0));
+      if (tipo === 87) tramo.push(vec2(get(ev, 'f5', 0)));
+      out.push(tramo);
+    }
   }
   return out;
 }
@@ -73,9 +92,16 @@ function tramos(anim, attacks, bullets) {
 async function fichaBala(fuente, b, attacks, bullets, anims) {
   const golpes = new Map();
   const evs = new Map();
+  const funcionales = {};
   for (const anim of o(get(b, 'f19'), [])) {
     const t = tramos(anim, attacks, bullets);
     if (t.length) evs.set(get(anim, 'f0'), t);
+    funcionales[get(anim, 'f0')] = eventosDe(anim).map(([cuadro, ev]) => {
+      const out = { cuadro, tipo: get(ev, 'f2', 0), caja: get(ev, 'f1', 0), f3: get(ev, 'f3', 0), f4: get(ev, 'f4', 0) };
+      if (get(ev, 'f5') != null) out.f5 = typeof ev.f5 === 'bigint' ? ev.f5.toString() : ev.f5;
+      if (out.tipo === 10 || out.tipo === 87) out.vec2 = vec2(get(ev, 'f5', 0));
+      return out;
+    });
     for (const x of t) {
       if (x[2] === 1 && !golpes.has(x[3])) {
         const a = attacks.get(x[3]);
@@ -96,15 +122,15 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
 
   const cajas = new Map();
   let propias = null; // se lee al hacer falta (mismo resultado que leerla siempre)
-  for (const [nombre, t] of evs) {
-    const ids = new Set([...t.filter((x) => x[2] === 1).map((x) => x[4]), 1]);
+  for (const [nombre, listaEventos] of Object.entries(funcionales)) {
+    const ids = new Set([1, ...listaEventos.map((ev) => ev.caja).filter((id) => id !== 0)]);
     if (ids.size <= 1) continue;
     propias ??= await anims.de(get(b, 'f2'));
     const cuadros = propias.get(nombre) ?? new Map();
     if (ids.size > 1 && cuadros.size) {
       const n = Math.max(...cuadros.keys()) + 1;
       const lista = [];
-      for (let i = 0; i < n; i++) lista.push((cuadros.get(i) ?? []).filter((c) => ids.has(get(c, 'f0', 0))).map(caja));
+      for (let i = 0; i < n; i++) lista.push((cuadros.get(i) ?? []).filter((c) => ids.has(get(c, 'f0', 0))).map(cajaBala));
       cajas.set(nombre, lista);
     }
   }
@@ -126,8 +152,22 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
     multiplicador: verdad(ataque) ? golpes.get(ataque).mult : null,
     ataques: Object.fromEntries(golpes),
     eventos: Object.fromEntries(evs),
+    funcionales,
     cajas: Object.fromEntries(cajas),
-    crudo: Object.fromEntries(CRUDOS.filter((k) => k in b).map((k) => [k, b[k]])),
+    fisica: {
+      velocidad: ['f6', 'f7', 'f8'].map((k) => get(b, k, 0)),
+      aceleracion: ['f9', 'f10', 'f11'].map((k) => get(b, k, 0)),
+      tipo: get(b, 'f3', 0), pararAlMorir: verdad(get(b, 'f15')), pararEnSuelo: verdad(get(b, 'f16')),
+      orientarVelocidad: verdad(get(b, 'f17')), vida: get(b, 'f18', 0) / 1000, tiempoSuelo: get(b, 'f20', 0) / 1000,
+      escala: get(b, 'f21', 100) / 100, suelo: verdad(get(b, 'f26')), impactos: get(b, 'f39', 0),
+      borrarAlAlcance: verdad(get(b, 'f45')), apuntarZ: get(b, 'f34', 0), apuntarY: get(b, 'f35', 0),
+      apuntarSuelo: verdad(get(b, 'f51')),
+      seguimiento: get(b, 'f37', 0),
+      artFacing: get(b, 'f55', 2) === 1 ? -1 : 1, sinImpactoAppear: verdad(get(b, 'f56')),
+      offset: ['f58', 'f59', 'f60'].map((k) => get(b, k, 0)),
+    },
+    // Valores originales sin atribuir significado a f12/f13/f14 ni a los campos aún no leídos.
+    crudo: Object.fromEntries(Object.entries(b).filter(([k]) => /^f\d+$/.test(k) && !['f0', 'f1', 'f2', 'f19'].includes(k))),
   });
   return ficha;
 }
@@ -162,7 +202,9 @@ export async function exportarProyectiles(fuente, salida, unidadDe, avance = nul
         if (!bullets.has(bid)) continue;
         unidad ??= await anims.de(nombreUnidad ?? null);
         const pt = punto((unidad.get(name) ?? new Map()).get(cuadro) ?? [], get(ev, 'f1'));
-        lista.push({ cuadro, tipo: ev.f2, bala: bid, salida: get(ev, 'f1'), punto: pt, f4: get(ev, 'f4') });
+        const disparo = { cuadro, tipo: ev.f2, bala: bid, salida: get(ev, 'f1'), punto: pt, f4: get(ev, 'f4') };
+        if (ev.f2 === 87) disparo.vec2 = vec2(get(ev, 'f5', 0));
+        lista.push(disparo);
         const pendientes = [bid];
         while (pendientes.length) {
           const x = pendientes.pop();

@@ -1,5 +1,5 @@
 import { rutaWeb } from './rutas.js';
-// Proyectiles de personajes y enemigos (D48/D71). Exportador JS compartido entre Node y OPFS.
+// Proyectiles de personajes y enemigos (D48/D71/D72). Exportador compartido entre Node y OPFS.
 // Datos: proyectiles/<personaje>.json y proyectiles_enemigos/<maestro>.json.
 //
 // Qué está leído y qué no:
@@ -7,13 +7,11 @@ import { rutaWeb } from './rutas.js';
 //     (f3 = attack.json, f1 = caja de la animación); las cajas se miden como en cajas.js (/ 1.82).
 //   - CONFIRMADO (Ghidra, D71): evento 4 → virtual 0x220 → FUN_00840760; creación con el actor emisor,
 //     salida /1.82 (FUN_00840664), y golpe de bala por FUN_0083fbb0 como los actores.
-//   - DEDUCCIÓN (de los datos): el tipo 57 dispara la bala f3 (bullet.json) desde la caja f1 del
-//     personaje (`punto`); la bala pega con el golpe (tipo 1) de sus propios eventos (bullet.f19: 'wait'
-//     en vuelo, 'dead' al chocar) usando su caja de ataque; f6 = velocidad, f33 = alcance; las balas
-//     también disparan balas hijas (tipos 4/57).
-//   - PROVISIONAL (inventado): ver PROVISIONAL abajo (velocidad en unidades del mundo por segundo, que
-//     una bala en vuelo se para en el primer enemigo, que el ancla de la bala va en el punto de salida,
-//     respaldos sin cajas, duración máxima, y que la bala vuela recta hacia donde mira el personaje).
+//   - CONFIRMADO (D72): velocidad/aceleración 3D, fases por f3, contador f39, vida f18, suelo f20/f26,
+//     escala f21, ángulo de caja, profundidad de evento4 y posición absoluta de evento87.
+//   - Evento57 configura el gestor de apuntado original; su selección y liberación siguen pendientes.
+//     El port emite en ese cuadro y selecciona el objetivo delantero más cercano como aproximación.
+//   - PROVISIONAL: respaldos cuando faltan cajas y compatibilidad con catálogos anteriores a v4.
 //
 // juego.js solo hace:
 //   const proyectiles = await Proyectiles.cargar(renderer, personajeId, { escala, suelo });
@@ -28,9 +26,9 @@ import { sonidosCruzados } from './audio/eventos.js';
 import { resolverGolpe } from './defensa.js';
 import { enPausa, descontarPausa } from './impacto.js';
 
-export const TIPOS_DISPARO = [4, 57]; // 4 confirmado en D71; 57 deducido de los datos
+export const TIPOS_DISPARO = [4, 57, 87];
 
-// Todo inventado: se cambia cuando se lea en el binario (lista "Revisar en Ghidra (local)" en NOTAS.md).
+// Respaldos sin datos y compatibilidad anterior a v4. Los catálogos actuales usan ficha.fisica.
 export const PROVISIONAL = {
   salida: [190, 290], // si el disparo no trae caja de salida: px de la animación desde el origen
   choque: 40, // sin cajas (bala o enemigo): distancia en x a la que una bala en vuelo toca a un enemigo
@@ -49,23 +47,66 @@ export function eventosEntre(lista, antes, ahora) {
 
 /** Posición de salida de una bala: la caja `punto` del disparo (o la PROVISIONAL), / 1.82 como en D51. */
 export function puntoSalida(p, disparo) {
-  const [dx, dy] = disparo.punto ?? PROVISIONAL.salida;
+  if (disparo.tipo === 87) {
+    const suelo = p.suelo ?? p.y - (p.alt ?? 0);
+    return { x: Math.trunc(disparo.vec2?.[0] ?? 0), y: Math.trunc(disparo.vec2?.[1] ?? 0) + suelo, z: -(disparo.f4 ?? 0), suelo };
+  }
+  const [dx, dy, angulo = 0] = disparo.punto ?? PROVISIONAL.salida;
   const mira = (p.dir ?? 1) * (p.artFacing ?? 1);
+  const escala = p.ficha?.fisica?.escala ?? 1;
   // D58: la bala sale a la profundidad de quien dispara y mide su altura desde el suelo de esa z.
-  return { x: p.x + (dx * mira) / PIXELES_POR_UNIDAD, y: p.y + dy / PIXELES_POR_UNIDAD, z: p.z, suelo: p.y - (p.alt ?? 0) };
+  return { x: p.x + (dx * mira * escala) / PIXELES_POR_UNIDAD, y: p.y + dy * escala / PIXELES_POR_UNIDAD,
+    z: (p.z ?? 0) + (disparo.tipo === 4 ? disparo.f4 ?? 0 : 0), suelo: p.suelo ?? p.y - (p.alt ?? 0), angulo };
 }
 
-export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null }) {
+export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null, angulo = 0, emisor = null, objetivo = null }) {
   const evs = ficha.eventos ?? {};
-  // DEDUCCIÓN: 'wait' es la bala en vuelo (o el efecto quieto); si solo trae 'dead', empieza ahí.
-  const fase = evs.wait || ficha.velocidad ? 'wait' : evs.dead ? 'dead' : evs.ground ? 'ground' : 'wait';
-  return {
+  // FUN_00821550: tipo1 appear; 2/4 wait; 3 dead; 5 ground. Respaldo para catálogos antiguos.
+  const fis = ficha.fisica;
+  const fase = fis ? ({ 1: 'appear', 2: 'wait', 3: 'dead', 4: 'wait', 5: 'ground' }[fis.tipo] ?? 'wait')
+    : evs.wait || ficha.velocidad ? 'wait' : evs.dead ? 'dead' : evs.ground ? 'ground' : 'wait';
+  let [vx, vy, vz] = fis?.velocidad ?? [ficha.velocidad ?? 0, 0, 0];
+  vx *= dir;
+  const rad = angulo * Math.PI / 180 * dir;
+  [vx, vy] = [vx * Math.cos(rad) - vy * Math.sin(rad), vy * Math.cos(rad) + vx * Math.sin(rad)];
+  const offset = fis?.offset ?? [0, 0, 0];
+  x += offset[0]; y += offset[1]; z = (z ?? 0) + offset[2];
+  const bala = {
     id: Number(id), ficha, x, y, dir, sentido: dir * (Math.sign(ficha.velocidad) || 1), x0: x, z, suelo,
-    fase, t: 0, cuadro: -1, vida: 0, paso: 0,
+    fase, t: 0, cuadro: -1, vida: 0, paso: 0, vx, vy, vz, z0: z, impactos: 0, tiempoSuelo: 0,
+    emisor, objetivo, offsetEmisor: emisor ? [x - emisor.x, z - (emisor.z ?? 0)] : null,
+    artFacing: fis?.artFacing ?? 1,
     golpeados: new Map(), // attack id -> Set de enemigos ya golpeados (un golpe por enemigo y ventana)
     hechos: new Set(), // tramos de balas hijas ya disparados
-    muerta: false,
+    muerta: false, agotada: false, activas: new Map(),
   };
+  apuntarBala(bala, objetivo);
+  return bala;
+}
+
+// FUN_00840760: f34 permite orientar x/z; f35 corrige vy para llegar a media altura
+// del objetivo compensando su aceleración vertical. Solo dentro de la tolerancia en grados.
+export function apuntarBala(b, objetivo) {
+  const fis = b.ficha.fisica;
+  if (!fis || !objetivo || !vivo(objetivo)) return;
+  const dx = objetivo.x - b.x, dz = (objetivo.z ?? 0) - b.z;
+  if (dx * b.vx <= 0) return;
+  const toleranciaZ = fis.apuntarZ * Math.PI / 180;
+  const angZ = Math.atan2(dz, Math.abs(dx));
+  if (fis.apuntarZ > 0 && Math.abs(angZ - Math.atan2(b.vz, Math.abs(b.vx))) < toleranciaZ) {
+    const velocidad = Math.hypot(b.vx, b.vz), distancia = Math.hypot(dx, dz);
+    b.vx = velocidad * dx / distancia; b.vz = velocidad * dz / distancia;
+  }
+  if (fis.apuntarY > 0 && b.vx) {
+    const cajas = cajasDe(objetivo), cuerpos = cajas?.filter((c) => c[1] === TIPO.CUERPO) ?? [];
+    const rs = cuerpos.map((c) => rectDe(objetivo, c, cajas, { suelo: objetivo.alt ?? 0 }));
+    const altura = fis.apuntarSuelo ? 0 : rs.length ? (Math.min(...rs.map((r) => r.y)) + Math.max(...rs.map((r) => r.y + r.h))) / 2 : (objetivo.alt ?? 0);
+    const dy = altura - (b.y - (b.suelo ?? 0));
+    if (Math.abs(Math.atan2(dy, Math.abs(dx)) - Math.atan2(b.vy, Math.abs(b.vx))) < fis.apuntarY * Math.PI / 180) {
+      const tiempo = Math.abs(dx / b.vx);
+      b.vy = (dy - tiempo * tiempo * (fis.aceleracion?.[1] ?? 0) / 2) / tiempo;
+    }
+  }
 }
 
 /** Cajas de la bala en su cuadro actual ([id, tipo, x, y, ancho, alto], o null sin datos). */
@@ -83,8 +124,8 @@ export function rectBala(b, idCaja, suelo = 0) {
   const cajas = cajasBala(b);
   const caja = cajas?.find((c) => c[0] === idCaja);
   if (!caja) return null;
-  const r = rectDe({ x: b.x, dir: b.dir, artFacing: 1 }, caja, cajas, { suelo: b.y - suelo });
-  if (b.paso) {
+  const r = rectDe(b, caja, cajas, { suelo: b.y - suelo, escala: b.ficha.fisica?.escala ?? 1 });
+  if (b.paso && !b.ficha.fisica) {
     r.w += b.paso;
     if ((b.sentido ?? b.dir) > 0) r.x -= b.paso;
   }
@@ -93,8 +134,8 @@ export function rectBala(b, idCaja, suelo = 0) {
 
 /**
  * ¿La caja `idCaja` de la bala toca el cuerpo de `e`? null si falta algún dato (se usa el respaldo).
- * PROVISIONAL: solo en x. Con la altura, la bala del rifle (sale del cañón, a ~137 sobre el suelo) pasa
- * por encima del lobo (cuerpo hasta ~99), y en el juego le pega: o no mira la altura, o la bala apunta.
+ * D72: intersección en x/altura, igual que FUN_0083fbb0. El barrido del port evita atravesar cuerpos
+ * entre pasos; usa el segmento real, sin ampliar toda una diagonal a un rectángulo.
  */
 export function tocaCaja(b, idCaja, e, suelo = 0, ids = null) {
   const r = rectBala(b, idCaja, b.suelo ?? suelo);
@@ -103,16 +144,31 @@ export function tocaCaja(b, idCaja, e, suelo = 0, ids = null) {
   if (!r || !cuerpos.length) return null;
   return cuerpos.some((c) => {
     const k = rectDe(e, c, cd, { suelo: e.alt ?? 0 });
-    return seCruzan(r, { ...k, y: r.y, h: r.h });
+    if (seCruzan(r, k)) return true;
+    if (!b.anterior) return false;
+    return segmentoRect(b.anterior.x - b.x + r.x + r.w / 2,
+      b.anterior.alt - (b.y - (b.suelo ?? suelo)) + r.y + r.h / 2,
+      r.x + r.w / 2, r.y + r.h / 2, { x: k.x - r.w / 2, y: k.y - r.h / 2, w: k.w + r.w, h: k.h + r.h });
   });
 }
 
+function segmentoRect(x0, y0, x1, y1, r) {
+  let desde = 0, hasta = 1;
+  for (const [origen, delta, min, max] of [[x0, x1 - x0, r.x, r.x + r.w], [y0, y1 - y0, r.y, r.y + r.h]]) {
+    if (!delta) { if (origen < min || origen > max) return false; continue; }
+    const a = (min - origen) / delta, b = (max - origen) / delta;
+    desde = Math.max(desde, Math.min(a, b)); hasta = Math.min(hasta, Math.max(a, b));
+    if (desde > hasta) return false;
+  }
+  return true;
+}
+
 // D71: defensa con la caja y recorrido de la bala; dirección fijada al disparar.
-// Conserva el choque horizontal provisional de D48, también en las cajas de parada.
+// D72: cuerpo y parada comprueban también altura.
 export function resolverImpactoBala(b, g, defensor) {
   const dir = b.sentido ?? b.dir;
   const atq = { x: b.x - dir * Math.max(b.paso, 0.001), dir, z: b.z };
-  return resolverGolpe(atq, g, defensor, { reduccion: defensor.reduccion,
+  return resolverGolpe(atq, { ...g, prof: g.prof == null ? g.prof : g.prof * (b.ficha.fisica?.escala ?? 1) }, defensor, { reduccion: defensor.reduccion,
     choque: (ids) => tocaCaja(b, g.caja, defensor, b.suelo ?? 0, ids) ?? (ids ? false : true) });
 }
 
@@ -122,6 +178,7 @@ export function resolverImpactoBala(b, g, defensor) {
  * dispara en este paso: [{ id, x, y, dir }].
  */
 export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = () => null) {
+  if (b.ficha.fisica) return moverBalaOriginal(b, dt, foes, golpear, numFrames, toca);
   const f = b.ficha;
   const hijas = [];
   b.vida += dt;
@@ -192,11 +249,105 @@ export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = (
   return hijas;
 }
 
+// D72: FUN_00823260 integra p += v·dt + a·dt²/2, v += a·dt. FUN_00821240/008236fc
+// resuelven alcance, suelo y fases; FUN_00821ffc cuenta impactos, sin limitar siempre al primer cuerpo.
+function moverBalaOriginal(b, dt, foes, golpear, numFrames, toca) {
+  const f = b.ficha, fis = f.fisica, hijas = [];
+  if (b.fase === 'appear' && numFrames('appear') == null && !f.eventos?.appear) cambiarFase(b, 'wait');
+  if (b.agotada && b.fase === 'wait') cambiarFase(b, 'dead');
+  b.anterior = { x: b.x, alt: b.y - (b.suelo ?? 0) };
+  b.vida += dt;
+  if (!b.agotada) {
+    const [ax = 0, ay = 0, az = 0] = fis.aceleracion ?? [];
+    b.x += b.vx * dt + ax * b.dir * dt * dt / 2;
+    b.y += b.vy * dt + ay * dt * dt / 2;
+    b.z += b.vz * dt + az * dt * dt / 2;
+    b.vx += ax * b.dir * dt; b.vy = Math.max(-1980, b.vy + ay * dt); b.vz += az * dt;
+    if (fis.seguimiento === 2 && b.emisor) {
+      b.x = b.emisor.x + b.offsetEmisor[0]; b.z = (b.emisor.z ?? 0) + b.offsetEmisor[1];
+    }
+    if (b.y <= (b.suelo ?? 0)) {
+      b.y = b.suelo ?? 0;
+      if (b.vy <= 0) {
+        if (fis.pararEnSuelo) b.vx = b.vy = b.vz = 0;
+        if (fis.tiempoSuelo > 0 && (b.tiempoSuelo += dt) >= fis.tiempoSuelo) b.muerta = true;
+        if (b.fase === 'wait' && fis.suelo) cambiarFase(b, 'ground');
+      }
+    }
+    if (f.alcance > 0 && Math.hypot(b.x - b.x0, b.z - b.z0) > f.alcance) agotarBala(b, fis.borrarAlAlcance ? 'disappear' : 'dead');
+    if (fis.vida > 0 && b.vida > fis.vida) agotarBala(b);
+  }
+  b.paso = Math.abs(b.x - b.anterior.x);
+  b.sentido = Math.sign(b.vx) || b.sentido;
+  if (b.muerta) return hijas;
+  const fps = f.sonidos?.[b.fase]?.fps ?? PROVISIONAL.fps;
+  const n = numFrames(b.fase) ?? ultimoCuadro(f.eventos?.[b.fase]) + 1;
+  let cuadro = Math.floor((b.t + dt) * fps + 1e-9);
+  let desde = b.cuadro + 1;
+  if (desde >= n) {
+    const paso = b.paso;
+    if (b.fase === 'appear') cambiarFase(b, 'wait');
+    else if (b.fase === 'wait' || (b.fase === 'ground' && fis.tiempoSuelo > 0)) cambiarFase(b, b.fase);
+    else { b.muerta = true; return hijas; }
+    b.paso = paso;
+    dt = 0; cuadro = 0; desde = 0; // conservar el recorrido de este paso al entrar/repetir fase
+  }
+  cuadro = Math.min(cuadro, n - 1); b.t += dt; b.cuadro = cuadro;
+  for (const ev of f.funcionales?.[b.fase] ?? []) {
+    if (ev.cuadro < desde || ev.cuadro > cuadro) continue;
+    if (ev.tipo === 10) { b.vx = (ev.vec2?.[0] ?? 0) * b.dir; b.vy = ev.vec2?.[1] ?? 0; b.vz = 0; }
+    if (ev.tipo === 1) b.activas.set(ev.caja, ev.f3);
+    if (ev.tipo === 2) { b.activas.clear(); b.golpeados.clear(); }
+  }
+  const fase = b.fase;
+  for (const [inicio, fin, tipo, ref, caja, f4 = 0, vec2] of f.eventos?.[fase] ?? []) {
+    if (inicio > cuadro || fin < Math.min(desde, cuadro)) continue;
+    if (tipo === 1) {
+      if (f.funcionales?.[fase] && b.activas.get(caja) !== ref) continue;
+      const clave = `${fase}:${inicio}:${ref}:${caja}`;
+      const ya = b.golpeados.get(clave) ?? new Set(); b.golpeados.set(clave, ya);
+      const atk = f.ataques?.[ref] ?? { mult: f.multiplicador ?? 1 };
+      const tocados = foes.filter((e) => {
+        if (!vivo(e) || ya.has(e)) return false;
+        if (atk.prof != null && Math.abs((e.z ?? 0) - b.z) >= atk.prof * (fis.escala ?? 1) + (e.radio ?? 0)) return false;
+        const choque = toca(b, caja, e);
+        if (choque !== null) return choque;
+        return Math.abs(e.x - b.x) <= PROVISIONAL.choque + b.paso;
+      }).sort((a, c) => (a.x - c.x) * b.sentido);
+      for (const e of tocados) {
+        ya.add(e); golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
+        if (b.muerta) break;
+        if (fis.impactos > 0 && (fase === 'wait' || (fase === 'appear' && !fis.sinImpactoAppear))) {
+          b.impactos++;
+          if (b.impactos >= fis.impactos) { agotarBala(b); break; }
+        }
+      }
+    } else if (TIPOS_DISPARO.includes(tipo)) {
+      const clave = `${fase}:${inicio}:${ref}:${caja}:${f4}`;
+      if (b.hechos.has(clave)) continue; b.hechos.add(clave);
+      const cajas = cajasBala(b, fase, inicio) ?? [];
+      const salida = cajas.find((c) => c[0] === caja), origen = cajas.find((c) => c[0] === 1) ?? [1, 1, 0, 0];
+      const punto = salida ? [salida[2] - origen[2], salida[3] - origen[3], salida[6] ?? 0] : null;
+      hijas.push({ id: ref, ...puntoSalida(b, { tipo, punto, f4, vec2 }), dir: b.dir, emisor: b.emisor, objetivo: b.objetivo });
+    }
+  }
+  return hijas;
+}
+
+function agotarBala(b, fase = 'dead') {
+  b.agotada = true;
+  if (b.ficha.fisica.pararAlMorir) b.vx = b.vy = b.vz = 0;
+  if (b.fase === 'appear' && b.ficha.fisica.sinImpactoAppear) return;
+  if (!['ground', 'dead', 'disappear'].includes(b.fase)) cambiarFase(b, fase);
+}
+
 function cambiarFase(b, fase) {
   b.fase = fase;
   b.t = 0;
   b.cuadro = -1;
   b.paso = 0;
+  b.hechos.clear();
+  b.activas?.clear();
 }
 
 function ultimoCuadro(tramos) {
@@ -243,6 +394,8 @@ export class Proyectiles {
     pr.datos = this.datos;
     pr.anims = this.anims;
     pr.alSonido = this.alSonido;
+    pr.limites = this.limites;
+    pr.sueloDe = this.sueloDe;
     return pr;
   }
 
@@ -281,13 +434,21 @@ export class Proyectiles {
    * @param {(e, rate: number, final: boolean, atk) => void} golpear  aplica un golpe de bala (atk.tipo: D61)
    */
   update(dt, p, foes, golpear, { emitir = true } = {}) {
-    if (emitir) this.seguirAnimacion(p);
+    if (emitir) this.seguirAnimacion(p, foes);
     const toca = (b, caja, e) => tocaCaja(b, caja, e, this.suelo);
-    for (let i = 0; i < this.balas.length; i++) {
+    const existentes = this.balas.length;
+    for (let i = 0; i < existentes; i++) {
       const b = this.balas[i];
       if (enPausa(b)) { descontarPausa(b, dt); continue; }
       const faseAntes = b.fase, tiempoAntes = b.t;
       const hijas = moverBala(b, dt, foes, golpear, (fase) => this.cuadrosDe(b, fase), toca);
+      if (this.sueloDe) {
+        const suelo = this.sueloDe(b.z);
+        b.y += suelo - (b.suelo ?? suelo); b.suelo = suelo;
+      }
+      const limites = this.limites?.();
+      if (limites && ((b.x < limites.xMin && b.vx < 0) || (b.x > limites.xMax && b.vx > 0) ||
+        ((b.z < limites.zMin || b.z > limites.zMax) && b.y <= (b.suelo ?? 0)))) b.muerta = true;
       // Terminar de cruzar la fase anterior antes de emitir el cuadro cero de la nueva.
       // El choque/fin puede cambiar de fase dentro de moverBala, incluso saltando varios cuadros.
       const emitir = (fase, tiempo) => {
@@ -297,7 +458,7 @@ export class Proyectiles {
         const ahora = tiempo * fps;
         const antes = b._faseAudio === fase ? b._cuadroAudio : -1;
         const n = (this.cuadrosDe(b, fase) ?? ultimoCuadro(b.ficha.eventos?.[fase]) + 1) * fps / PROVISIONAL.fps;
-        for (const s of sonidosCruzados(se.sonidos, antes, ahora, n, fase === 'wait' && Boolean(b.ficha.velocidad))) this.alSonido(s.id, s.tipo);
+        for (const s of sonidosCruzados(se.sonidos, antes, ahora, n, fase === 'wait' && (Boolean(b.ficha.fisica) || Boolean(b.ficha.velocidad)))) this.alSonido(s.id, s.tipo);
         b._faseAudio = fase; b._cuadroAudio = ahora;
       };
       emitir(faseAntes, tiempoAntes);
@@ -308,7 +469,7 @@ export class Proyectiles {
   }
 
   // Dispara las balas de los eventos de la animación del personaje al pasar por sus cuadros.
-  seguirAnimacion(p) {
+  seguirAnimacion(p, foes = []) {
     const s = this.seguimiento;
     if (!p.anim) return;
     if (p.anim !== s.anim || p.time < s.tiempo) {
@@ -318,7 +479,9 @@ export class Proyectiles {
     s.tiempo = p.time;
     const disparos = this.datos.disparos[p.anim.name];
     if (!disparos || p.frame === s.cuadro) return;
-    for (const d of eventosEntre(disparos, s.cuadro, p.frame)) this.disparar(d.bala, { ...puntoSalida(p, d), dir: p.dir });
+    const objetivo = foes.filter(vivo).filter((e) => (e.x - p.x) * p.dir > 0)
+      .sort((a, b) => Math.hypot(a.x - p.x, (a.z ?? 0) - (p.z ?? 0)) - Math.hypot(b.x - p.x, (b.z ?? 0) - (p.z ?? 0)))[0];
+    for (const d of eventosEntre(disparos, s.cuadro, p.frame)) this.disparar(d.bala, { ...puntoSalida(p, d), dir: p.dir, emisor: p, objetivo });
     s.cuadro = p.frame;
   }
 
@@ -335,9 +498,20 @@ export class Proyectiles {
       const cuadro = Math.min(b.cuadro, e.anim.numFrames - 1);
       // La posición de la bala es la de su caja 1 (origen), como la x lógica de un personaje es su raíz.
       const o = cajasBala(b, b.fase, cuadro)?.find((c) => c[0] === 1) ?? [1, 1, 0, 0];
-      out.push(...buildCharacterQuads(a.ssbp, a.textures, e.pack, e.anim, cuadro, {
-        x: b.x - (o[2] * b.dir) / PIXELES_POR_UNIDAD, y: b.y - o[3] / PIXELES_POR_UNIDAD, scale: this.escala, flipX: b.dir < 0,
-      }));
+      const escala = b.ficha.fisica?.escala ?? 1, mira = b.dir * b.artFacing;
+      const qs = buildCharacterQuads(a.ssbp, a.textures, e.pack, e.anim, cuadro, {
+        x: b.x - (o[2] * mira * escala) / PIXELES_POR_UNIDAD, y: b.y - o[3] * escala / PIXELES_POR_UNIDAD,
+        scale: this.escala * escala, flipX: mira < 0,
+      });
+      if (b.ficha.fisica?.orientarVelocidad && (b.vx || b.vy)) {
+        const angulo = Math.atan2(b.vy, b.vx * b.dir) * b.dir;
+        const c = Math.cos(angulo), s = Math.sin(angulo);
+        for (const q of qs) for (const pt of q.pts) {
+          const x = pt[0] - b.x, y = pt[1] - b.y;
+          pt[0] = b.x + x * c - y * s; pt[1] = b.y + x * s + y * c;
+        }
+      }
+      out.push(...qs);
     }
     return out;
   }

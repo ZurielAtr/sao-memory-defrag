@@ -1716,6 +1716,10 @@ async function cargarMiembro(id, i, combat) {
     else if (tipo === 65 || (tipo === 116 && battle?.player === ch)) void audio.vozTipo(pj?.grupoVoz, id, { emisor: ch });
   };
   ch.proyectiles.alSonido = (id, tipo) => { if (tipo === 5 && !historiasPendientes) void audio.efecto(id); };
+  ch.proyectiles.sueloDe = groundY;
+  ch.proyectiles.limites = () => battle && !battle.repeat ? {
+    xMin: -100, xMax: (battle.fieldWidth ?? Infinity) + 100, zMin: -100, zMax: (battle.fieldDepth ?? Infinity) + 100,
+  } : null;
   ch.alAnimar = (nombre) => {
     if (ch.enReserva || historiasPendientes) return;
     // FUN_00826a54: motions 18/19 son damage/down (D69).
@@ -1847,6 +1851,10 @@ async function main() {
   await Promise.all([...protos.values()].map(async (pr) => { pr.cajas = await cargarCajas(pr.unit); })); // D51
   const proyectilesEnemigos = new Map(await Promise.all(Object.keys(mission.enemigos).map(async (id) => {
     const pr = await Proyectiles.cargar(renderer, id, { escala: CHAR_SCALE, suelo: GROUND, enemigo: true });
+    pr.sueloDe = groundY;
+    pr.limites = () => battle && !battle.repeat ? {
+      xMin: -100, xMax: (battle.fieldWidth ?? Infinity) + 100, zMin: -100, zMax: (battle.fieldDepth ?? Infinity) + 100,
+    } : null;
     pr.alSonido = (id, tipo) => { if (tipo === 5 && !historiasPendientes) void audio.efecto(id); };
     return [id, pr];
   })));

@@ -94,10 +94,9 @@ export class Character {
     this.loop = false;
     this.done = false;
 
-    // Hacia dónde mira el arte original: según el avance de su primer ataque.
-    const atk = this.rootMotionOf('attack_1');
-    const peak = atk ? atk.reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0) : 0;
-    this.artFacing = peak < 0 ? -1 : 1;
+    // D72: el sentido del arte es explícito (actor +0x91), por defecto derecha.
+    // Un avance negativo también puede ser un retroceso, como el aliento de X'rphan.
+    this.artFacing = opts.artFacing ?? 1;
   }
 
   has(name) {
