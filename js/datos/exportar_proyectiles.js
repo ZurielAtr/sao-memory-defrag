@@ -1,5 +1,6 @@
-// Proyectiles (D48): port de herramientas/exportar_proyectiles.py (D68, mismo resultado). Salida:
+// Proyectiles (D48/D71): exportador compartido entre Node y el importador OPFS. Salida:
 // proyectiles/<id>.json = { disparos: {animación: [...]}, balas: {id: ficha} } para todos los personajes.
+// proyectiles_enemigos/<id>.json: mismo formato, desde enemy.f13, con defensa/estados de attack.
 // Qué es cada campo (y qué es DEDUCCIÓN): en el .py.
 
 import { get, o, verdad, ordenar, pyRound, aJSON, iterar } from './py.js';
@@ -7,7 +8,7 @@ import { TIPOS_BUFF, buffDe, estadosDe, porId, eventos } from './comun.js';
 import { ssbpPacks, SUPPORTED } from './exportar_personajes.js';
 import { caja } from './exportar_cajas.js';
 
-const TIPOS_DISPARO = [4, 57]; // DEDUCCIÓN
+const TIPOS_DISPARO = [4, 57]; // 4 confirmado en Ghidra (D71); 57 sigue deducido de character.f18
 const CRUDOS = ['f3', 'f7', 'f10', 'f12', 'f13', 'f21', 'f34', 'f35', 'f41', 'f47', 'f48', 'f49', 'f61', 'f65'];
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // Campos de una caja que usan punto() y caja(): se guarda solo eso (las animaciones ocupan mucho).
@@ -78,7 +79,10 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
     for (const x of t) {
       if (x[2] === 1 && !golpes.has(x[3])) {
         const a = attacks.get(x[3]);
-        const g = { mult: o(get(a, 'f3'), 0) / 10000, final: get(a, 'f10') === 1001, prof: o(get(a, 'f8', 0), 0), tipo: o(get(a, 'f2', 0), 0) };
+        const g = { mult: o(get(a, 'f3'), 0) / 10000, final: get(a, 'f10') === 1001, prof: o(get(a, 'f8', 0), 0), tipo: o(get(a, 'f2', 0), 0),
+          ataque: x[3], guardia: get(a, 'f7', 0), parable: verdad(get(a, 'f44')), medidor: o(get(a, 'f23', 0), 0),
+          pausa: ['f25', 'f26', 'f32', 'f33'].map((k) => o(get(a, k, 0), 0)), clase: get(a, 'f1', 0), odio: get(a, 'f61', 0) };
+        if (g.tipo === 2 || g.tipo === 10) g.cura = { tope: o(get(a, 'f46', 0), 0), div: o(get(a, 'f4', 1), 1) };
         if (TIPOS_BUFF.includes(g.tipo)) g.buff = buffDe(a);
         const [est, anormal] = estadosDe(a);
         if (verdad(est)) g.estados = est;
@@ -136,21 +140,27 @@ export async function exportarProyectiles(fuente, salida, unidadDe, avance = nul
   const bullets = porId(await fuente.md('bullet'));
   const attacks = porId(await fuente.md('attack'));
   const anims = new Animaciones(fuente, await fuente.animaciones());
+  const units = porId(await fuente.md('unit'));
+  const enemies = [...(await fuente.enemigos()).values()];
+  const actores = [
+    ...chars.map((r) => ({ r, campo: 'f18', unidad: unidadDe.get(r.f0), carpeta: 'proyectiles' })),
+    ...enemies.map((r) => ({ r, campo: 'f13', unidad: get(units.get(r.f3) ?? {}, 'f3'), carpeta: 'proyectiles_enemigos' })),
+  ];
   const fichas = new Map();
   let i = 0;
-  for (const r of chars) {
-    avance?.(++i / chars.length);
+  for (const { r, campo, unidad: nombreUnidad, carpeta } of actores) {
+    avance?.(++i / actores.length);
     let unidad = null; // animaciones de la unidad: solo si dispara
     const disparos = {};
     const balas = new Map();
-    for (const anim of o(get(r, 'f18'), [])) {
+    for (const anim of o(get(r, campo), [])) {
       const name = get(anim, 'f0');
       const lista = [];
       for (const [cuadro, ev] of eventosDe(anim)) {
         if (!TIPOS_DISPARO.includes(get(ev, 'f2')) || !verdad(get(ev, 'f3'))) continue;
         const bid = ev.f3;
         if (!bullets.has(bid)) continue;
-        unidad ??= await anims.de(unidadDe.get(r.f0) ?? null);
+        unidad ??= await anims.de(nombreUnidad ?? null);
         const pt = punto((unidad.get(name) ?? new Map()).get(cuadro) ?? [], get(ev, 'f1'));
         lista.push({ cuadro, tipo: ev.f2, bala: bid, salida: get(ev, 'f1'), punto: pt, f4: get(ev, 'f4') });
         const pendientes = [bid];
@@ -165,6 +175,6 @@ export async function exportarProyectiles(fuente, salida, unidadDe, avance = nul
       }
       if (lista.length) disparos[name] = lista;
     }
-    await salida.escribir(`proyectiles/${r.f0}.json`, aJSON({ disparos, balas: Object.fromEntries(balas) }));
+    await salida.escribir(`${carpeta}/${r.f0}.json`, aJSON({ disparos, balas: Object.fromEntries(balas) }));
   }
 }

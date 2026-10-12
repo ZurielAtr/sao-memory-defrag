@@ -1,11 +1,13 @@
 import { rutaWeb } from './rutas.js';
-// Proyectiles (balas) de las armas a distancia (arco, vara, rifles) y de las skills que disparan (D48).
-// Ver NOTAS.md, "Proyectiles". Datos: web/data/proyectiles/<personaje>.json (herramientas/exportar_proyectiles.py).
+// Proyectiles de personajes y enemigos (D48/D71). Exportador JS compartido entre Node y OPFS.
+// Datos: proyectiles/<personaje>.json y proyectiles_enemigos/<maestro>.json.
 //
 // Qué está leído y qué no:
 //   - CONFIRMADO (Ghidra, D47/D51): en los eventos por cuadro (character.f18) el tipo 1 es un golpe
 //     (f3 = attack.json, f1 = caja de la animación); las cajas se miden como en cajas.js (/ 1.82).
-//   - DEDUCCIÓN (de los datos): los tipos 4 y 57 disparan la bala f3 (bullet.json) desde la caja f1 del
+//   - CONFIRMADO (Ghidra, D71): evento 4 → virtual 0x220 → FUN_00840760; creación con el actor emisor,
+//     salida /1.82 (FUN_00840664), y golpe de bala por FUN_0083fbb0 como los actores.
+//   - DEDUCCIÓN (de los datos): el tipo 57 dispara la bala f3 (bullet.json) desde la caja f1 del
 //     personaje (`punto`); la bala pega con el golpe (tipo 1) de sus propios eventos (bullet.f19: 'wait'
 //     en vuelo, 'dead' al chocar) usando su caja de ataque; f6 = velocidad, f33 = alcance; las balas
 //     también disparan balas hijas (tipos 4/57).
@@ -23,8 +25,10 @@ import { loadSSBP } from './character.js';
 import { buildCharacterQuads } from './renderer.js';
 import { cajasDe, rectDe, seCruzan, PIXELES_POR_UNIDAD, TIPO } from './cajas.js';
 import { sonidosCruzados } from './audio/eventos.js';
+import { resolverGolpe } from './defensa.js';
+import { enPausa, descontarPausa } from './impacto.js';
 
-export const TIPOS_DISPARO = [4, 57]; // DEDUCCIÓN
+export const TIPOS_DISPARO = [4, 57]; // 4 confirmado en D71; 57 deducido de los datos
 
 // Todo inventado: se cambia cuando se lea en el binario (lista "Revisar en Ghidra (local)" en NOTAS.md).
 export const PROVISIONAL = {
@@ -36,7 +40,7 @@ export const PROVISIONAL = {
   fps: 30,
 };
 
-const vivo = (e) => e.alive && !e.hidden;
+const vivo = (e) => (e.alive ?? e.hp > 0) && !e.hidden && !e.enReserva && !e.saliendo;
 
 /** Eventos de la lista (con `cuadro`) que se cruzan al pasar del cuadro `antes` (sin incluir) a `ahora`. */
 export function eventosEntre(lista, antes, ahora) {
@@ -54,9 +58,9 @@ export function puntoSalida(p, disparo) {
 export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null }) {
   const evs = ficha.eventos ?? {};
   // DEDUCCIÓN: 'wait' es la bala en vuelo (o el efecto quieto); si solo trae 'dead', empieza ahí.
-  const fase = evs.wait || !evs.dead || ficha.velocidad ? 'wait' : 'dead';
+  const fase = evs.wait || ficha.velocidad ? 'wait' : evs.dead ? 'dead' : evs.ground ? 'ground' : 'wait';
   return {
-    id: Number(id), ficha, x, y, dir, x0: x, z, suelo,
+    id: Number(id), ficha, x, y, dir, sentido: dir * (Math.sign(ficha.velocidad) || 1), x0: x, z, suelo,
     fase, t: 0, cuadro: -1, vida: 0, paso: 0,
     golpeados: new Map(), // attack id -> Set de enemigos ya golpeados (un golpe por enemigo y ventana)
     hechos: new Set(), // tramos de balas hijas ya disparados
@@ -82,7 +86,7 @@ export function rectBala(b, idCaja, suelo = 0) {
   const r = rectDe({ x: b.x, dir: b.dir, artFacing: 1 }, caja, cajas, { suelo: b.y - suelo });
   if (b.paso) {
     r.w += b.paso;
-    if (b.dir > 0) r.x -= b.paso;
+    if ((b.sentido ?? b.dir) > 0) r.x -= b.paso;
   }
   return r;
 }
@@ -92,15 +96,24 @@ export function rectBala(b, idCaja, suelo = 0) {
  * PROVISIONAL: solo en x. Con la altura, la bala del rifle (sale del cañón, a ~137 sobre el suelo) pasa
  * por encima del lobo (cuerpo hasta ~99), y en el juego le pega: o no mira la altura, o la bala apunta.
  */
-export function tocaCaja(b, idCaja, e, suelo = 0) {
+export function tocaCaja(b, idCaja, e, suelo = 0, ids = null) {
   const r = rectBala(b, idCaja, b.suelo ?? suelo);
   const cd = cajasDe(e);
-  const cuerpos = cd?.filter((c) => c[1] === TIPO.CUERPO) ?? [];
+  const cuerpos = cd?.filter((c) => ids ? ids.has(c[0]) : c[1] === TIPO.CUERPO) ?? [];
   if (!r || !cuerpos.length) return null;
   return cuerpos.some((c) => {
     const k = rectDe(e, c, cd, { suelo: e.alt ?? 0 });
     return seCruzan(r, { ...k, y: r.y, h: r.h });
   });
+}
+
+// D71: defensa con la caja y recorrido de la bala; dirección fijada al disparar.
+// Conserva el choque horizontal provisional de D48, también en las cajas de parada.
+export function resolverImpactoBala(b, g, defensor) {
+  const dir = b.sentido ?? b.dir;
+  const atq = { x: b.x - dir * Math.max(b.paso, 0.001), dir, z: b.z };
+  return resolverGolpe(atq, g, defensor, { reduccion: defensor.reduccion,
+    choque: (ids) => tocaCaja(b, g.caja, defensor, b.suelo ?? 0, ids) ?? (ids ? false : true) });
 }
 
 /**
@@ -112,9 +125,9 @@ export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = (
   const f = b.ficha;
   const hijas = [];
   b.vida += dt;
-  const enVuelo = b.fase === 'wait' && f.velocidad > 0;
-  b.paso = enVuelo ? f.velocidad * dt : 0;
-  if (enVuelo) b.x += b.paso * b.dir;
+  const enVuelo = b.fase === 'wait' && Boolean(f.velocidad);
+  b.paso = enVuelo ? Math.abs(f.velocidad) * dt : 0;
+  if (enVuelo) b.x += b.paso * b.sentido;
 
   // Cuadro actual (el tiempo avanza después: el cuadro 0 también cuenta) y primer cuadro sin revisar.
   const n = numFrames(b.fase) ?? ultimoCuadro(f.eventos?.[b.fase]) + 1;
@@ -149,22 +162,22 @@ export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = (
         if (b.z != null && atk.prof != null && Math.abs((e.z ?? 0) - b.z) >= atk.prof + (e.radio ?? 0)) return false;
         const r = toca(b, caja, e);
         if (r !== null) return r;
-        const dx = (e.x - b.x) * b.dir;
+        const dx = (e.x - b.x) * b.sentido;
         return enVuelo ? dx >= -PROVISIONAL.choque - b.paso && dx <= PROVISIONAL.choque : Math.abs(dx) <= PROVISIONAL.radioQuieta;
       });
       if (!tocados.length) continue;
       if (enVuelo) {
         // PROVISIONAL: la bala en vuelo se para en el primer enemigo que toca (el más atrás en su recorrido).
-        const e = tocados.reduce((a, c) => ((c.x - a.x) * b.dir < 0 ? c : a));
+        const e = tocados.reduce((a, c) => ((c.x - a.x) * b.sentido < 0 ? c : a));
         ya.add(e);
-        golpear(e, atk.mult, atk.final, atk);
+        golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
         cambiarFase(b, 'dead');
         if (!numFrames('dead') && !f.eventos?.dead) b.muerta = true;
         return hijas;
       }
       for (const e of tocados) {
         ya.add(e);
-        golpear(e, atk.mult, atk.final, atk);
+        golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
       }
     } else if (TIPOS_DISPARO.includes(tipo)) {
       const clave = `${b.fase}:${desde}:${ref}:${caja}`;
@@ -198,11 +211,11 @@ export class Proyectiles {
    * @param {number} [o.escala]  escala de dibujo (la de los personajes)
    * @param {number} [o.suelo]   y del suelo del jugador (para medir alturas como cajas.js)
    */
-  static async cargar(renderer, personajeId, { escala = 1, suelo = 0 } = {}) {
+  static async cargar(renderer, personajeId, { escala = 1, suelo = 0, enemigo = false } = {}) {
     const pr = new Proyectiles(renderer, escala, suelo);
     if (personajeId == null) return pr;
     try {
-      const r = await fetch(rutaWeb(`/data/proyectiles/${personajeId}.json`));
+      const r = await fetch(rutaWeb(`/data/${enemigo ? 'proyectiles_enemigos' : 'proyectiles'}/${personajeId}.json`));
       if (r.ok) Object.assign(pr.datos, await r.json());
     } catch (e) {
       console.warn('proyectiles: sin datos para', personajeId, e);
@@ -222,6 +235,20 @@ export class Proyectiles {
     this.balas = [];
     this.seguimiento = { anim: null, tiempo: 0, cuadro: -1 };
     this.disparadas = 0; // contador para depurar/pruebas
+  }
+
+  // Catálogo y texturas compartidos; balas y seguimiento independientes por actor.
+  instanciar() {
+    const pr = new Proyectiles(this.renderer, this.escala, this.suelo);
+    pr.datos = this.datos;
+    pr.anims = this.anims;
+    pr.alSonido = this.alSonido;
+    return pr;
+  }
+
+  reiniciar() {
+    this.balas = [];
+    this.seguimiento = { anim: null, tiempo: 0, cuadro: -1 };
   }
 
   async cargarAnimacion(carpeta) {
@@ -253,11 +280,12 @@ export class Proyectiles {
    * @param {Character[]} foes
    * @param {(e, rate: number, final: boolean, atk) => void} golpear  aplica un golpe de bala (atk.tipo: D61)
    */
-  update(dt, p, foes, golpear) {
-    this.seguirAnimacion(p);
+  update(dt, p, foes, golpear, { emitir = true } = {}) {
+    if (emitir) this.seguirAnimacion(p);
     const toca = (b, caja, e) => tocaCaja(b, caja, e, this.suelo);
     for (let i = 0; i < this.balas.length; i++) {
       const b = this.balas[i];
+      if (enPausa(b)) { descontarPausa(b, dt); continue; }
       const faseAntes = b.fase, tiempoAntes = b.t;
       const hijas = moverBala(b, dt, foes, golpear, (fase) => this.cuadrosDe(b, fase), toca);
       // Terminar de cruzar la fase anterior antes de emitir el cuadro cero de la nueva.
@@ -269,7 +297,7 @@ export class Proyectiles {
         const ahora = tiempo * fps;
         const antes = b._faseAudio === fase ? b._cuadroAudio : -1;
         const n = (this.cuadrosDe(b, fase) ?? ultimoCuadro(b.ficha.eventos?.[fase]) + 1) * fps / PROVISIONAL.fps;
-        for (const s of sonidosCruzados(se.sonidos, antes, ahora, n, fase === 'wait' && b.ficha.velocidad > 0)) this.alSonido(s.id, s.tipo);
+        for (const s of sonidosCruzados(se.sonidos, antes, ahora, n, fase === 'wait' && Boolean(b.ficha.velocidad))) this.alSonido(s.id, s.tipo);
         b._faseAudio = fase; b._cuadroAudio = ahora;
       };
       emitir(faseAntes, tiempoAntes);

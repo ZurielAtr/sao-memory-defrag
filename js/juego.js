@@ -26,7 +26,7 @@ import { IAEnemigo } from './ia.js';
 import { volverAInterfaz } from './ui/regreso.js';
 import { HudBatalla } from './ui/hud.js';
 import { cargarCajas, anchoCuerpo, PIXELES_POR_UNIDAD } from './cajas.js';
-import { Proyectiles } from './proyectiles.js';
+import { Proyectiles, resolverImpactoBala } from './proyectiles.js';
 import { actualizarDefensa, resolverGolpe, recuperarMedidor } from './defensa.js';
 import { pausaDeGolpe, pausar, enPausa, descontarPausa, PAUSA_PARADA } from './impacto.js';
 import { moverConVelocidad, orientar, GIRO_RAIZ } from './movimiento.js';
@@ -891,7 +891,7 @@ function updateEnemy(e, p, dt) {
       }
       break;
     case 'attack':
-      if (!e.hitDone && e.frame >= e.timing.hit) {
+      if (!e.hitDone && !e.proyectiles?.reemplaza(e) && e.frame >= e.timing.hit) {
         e.hitDone = true;
         const dx = (p.x - e.x) * e.dir;
         if (dx > -60 && dx < ENEMY_REACH + 20 && !playerInvulnerable(p)) hitPlayer(p, e);
@@ -982,7 +982,7 @@ function updateEnemyIA(e, p, dt) {
         eventosDeAtaque(e, p, e.eventos[e.attackAnim] ?? { golpes: [], impulsos: [] }, dt);
       } else {
         const t = e.timings[e.attackAnim];
-        if (!e.hitDone && e.frame >= t.hit) {
+        if (!e.hitDone && !e.proyectiles?.reemplaza(e) && e.frame >= t.hit) {
           e.hitDone = true;
           const dx = (p.x - e.x) * e.dir; // PROVISIONAL: alcance del golpe (cajas de colisión sin leer)
           if (dx > -60 && dx < ENEMY_REACH + 20 && p.hp > 0 && !playerInvulnerable(p)) hitPlayer(p, e, e.normales[e.attackAnim] ?? [1]);
@@ -1085,24 +1085,49 @@ function empezarParada(p) {
   p.play('parry', { restart: true });
 }
 
-function hitPlayer(p, e, rates = e.normales.attack_1 ?? [1], { guardia = false, golpe = null, factorGuardia = null } = {}) {
-  conGolpe(e, p, golpe, () => golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia }));
+function impactoEnemigo(p, e, g, b) {
+  if (!(p.hp > 0) || playerInvulnerable(p)) return;
+  const r = resolverImpactoBala(b, g, p);
+  if (r.auto) empezarParada(p);
+  if (r.resultado === 'parada') {
+    popup(p.x, p.y + 300 * CHAR_SCALE, 'PARRY', '#ffe28a');
+    if (g.parable) pausar(p, PAUSA_PARADA);
+    b.muerta = true; // provisional: destruir la bala parada; no parar a su emisor
+    return;
+  }
+  if (!r.resultado || r.resultado === 'auto') return;
+  if (noHaceDano(g)) { golpeSinDano(e, p, g); return; }
+  const cubierto = r.resultado === 'guardia' || r.resultado === 'rotura';
+  hitPlayer(p, e, [g.mult * r.factor], { guardia: cubierto, golpe: g, factorGuardia: r.factor, direccion: b.sentido });
+  if (r.resultado === 'rotura' && p.hp > 0) {
+    popup(p.x, p.y + 330 * CHAR_SCALE, 'GUARD BREAK', '#7fd0ff');
+    hitPlayer(p, e, [g.mult], { golpe: g, direccion: b.sentido });
+    if (p.hp > 0) aturdir(p);
+  }
+  // Provisional: pausa del defensor; la bala no detiene la animación del emisor.
+  pausaDeGolpe(b, p, g);
 }
 
-function golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia }) {
+function hitPlayer(p, e, rates = e.normales.attack_1 ?? [1], { guardia = false, golpe = null, factorGuardia = null, direccion = e.dir } = {}) {
+  conGolpe(e, p, golpe, () => golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion }));
+}
+
+function golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion }) {
   if (guardia) { // D53: golpe en guardia: daño reducido, sigue cubriéndose
     let dmg = 0;
     for (const rate of rates) dmg += danoDe(e, p, rate).dmg;
     dmg = danoFinal(p, dmg);
     p.hp = Math.max(0, p.hp - dmg);
     popup(p.x, p.y + 260 * CHAR_SCALE, `GUARD ${dmg}`, '#7fd0ff');
-    p.x += e.dir * 20 * A_ESCALA;
+    p.x += direccion * 20 * A_ESCALA;
     if (p.hp > 0) { estadosDelGolpe(p, golpe, factorGuardia ?? 0); return; }
+    caePersonaje(p);
+    return;
   }
-  const guarding = !guardia && !p.eventosDef && p.state === 'guard' && p.dir === -e.dir; // sin datos: la de antes
+  const guarding = !guardia && !p.eventosDef && p.state === 'guard' && p.dir === -direccion; // sin datos: la de antes
   if (guarding) {
     popup(p.x, p.y + 260 * CHAR_SCALE, 'GUARD', '#7fd0ff');
-    p.x += e.dir * 20 * A_ESCALA;
+    p.x += direccion * 20 * A_ESCALA;
     return;
   }
   let dmg = 0;
@@ -1117,7 +1142,7 @@ function golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia }) {
   if (est && !est.reaccion && !est.derribo) return;
   p.alt = 0;
   p.vx = p.vz = 0;
-  p.face(-e.dir);
+  p.face(-direccion);
   if (p.hp <= 0) {
     caePersonaje(p);
   } else if (est?.derribo) {
@@ -1163,9 +1188,10 @@ const GATE_TOUCH = 70; // distancia para cruzar una puerta
 const GATE_REARM = 180; // hay que alejarse esto de las puertas antes de poder volver a cruzar
 
 class Battle {
-  constructor(mission, protos, player, stages) {
+  constructor(mission, protos, player, stages, proyectilesEnemigos) {
     this.mission = mission;
     this.protos = protos; // 'unidad|traje' -> Character cargado
+    this.proyectilesEnemigos = proyectilesEnemigos;
     this.player = player;
     this.stages = stages; // id de fondo -> Stage
     this.repeat = !!mission.repetir;
@@ -1215,6 +1241,7 @@ class Battle {
         if (!m) throw new Error(`enemigo ${pl.maestro} sin exportar en la misión`);
         const e = cloneCharacter(this.protos.get(`${m.unidad}|${m.traje ?? ''}`));
         const enemy = makeEnemy(e, { stats: enemyStats(this.mission, pl.maestro, pl.nivel), normales: m.normales, placed: pl.x == null ? null : pl });
+        enemy.proyectiles = this.proyectilesEnemigos.get(String(pl.maestro)).instanciar();
         enemy.wave = pl.otros?.f15 ?? 0; // aparición que lo trae (0 = desde el inicio)
         enemy.waitedBy = pl.otros?.f16 ?? 0; // aparición tipo 4 que espera su muerte
         if (IA_DATA?.entradas[pl.ia]) {
@@ -1242,6 +1269,8 @@ class Battle {
   /** Entra en el escenario `id`; `fromId` = escenario del que se viene (por una puerta). */
   enter(id, fromId) {
     const p = this.player;
+    // No llevar balas del escenario anterior ni reactivar balas al volver a un área visitada.
+    for (const area of this.areas.values()) for (const e of area.enemies) e.proyectiles.reiniciar();
     this.current = this.area(id);
     audio.escena(`escenario:${id}`);
     if (this.scenario.otros?.f3) void audio.musica(this.scenario.otros.f3); // FUN_00701e00: stage.f3
@@ -1816,6 +1845,11 @@ async function main() {
   const player = grupo[0];
   const shadow = renderer.createTexture(shadowImg);
   await Promise.all([...protos.values()].map(async (pr) => { pr.cajas = await cargarCajas(pr.unit); })); // D51
+  const proyectilesEnemigos = new Map(await Promise.all(Object.keys(mission.enemigos).map(async (id) => {
+    const pr = await Proyectiles.cargar(renderer, id, { escala: CHAR_SCALE, suelo: GROUND, enemigo: true });
+    pr.alSonido = (id, tipo) => { if (tipo === 5 && !historiasPendientes) void audio.efecto(id); };
+    return [id, pr];
+  })));
   if (params.get('hud') !== '0') {
     hudCsb = await HudBatalla.cargar({ grupo, jugador: player, mundoAPantalla: (x, y) => renderer.worldToScreen(x, y),
       skill: (p, n) => ({ ...skillInfo(p, n), etiqueta: skillLabel(p, n), coste: costeDe(p, n) }),
@@ -1825,7 +1859,7 @@ async function main() {
   }
   cutin = player.cutin;
   buildSkillMenu(player);
-  battle = new Battle(mission, protos, player, stages);
+  battle = new Battle(mission, protos, player, stages, proyectilesEnemigos);
   if (!TEST_MODE && params.get('historias') !== '0') historias = await historiasDeMision(mission.id ?? MISSION_ID);
   if (!TEST_MODE) await progreso.empezar(MISSION_ID, DIFFICULTY);
   document.getElementById('carga').remove();
@@ -1857,6 +1891,11 @@ async function main() {
       e.update(dt);
       orientarRaiz(e, r0, a0);
       actualizarDefensa(e, e.eventos);
+    }
+    for (const e of foes) {
+      const objetivos = player.hp > 0 && !playerInvulnerable(player) ? [player] : [];
+      e.proyectiles.update(dt, e, objetivos, (p, rate, final, g, b) => impactoEnemigo(p, e, g, b),
+        { emitir: e.alive && !e.hidden && !enPausa(e) });
     }
     descontarPausa(player, dt);
     for (const e of foes) descontarPausa(e, dt);
@@ -1932,6 +1971,7 @@ async function main() {
     renderer.drawQuads(shadows);
     renderer.drawQuads(bodies.flatMap((c) => c.quads()));
     for (const m of grupo) renderer.drawQuads(m.proyectiles.quads());
+    for (const e of foes) renderer.drawQuads(e.proyectiles.quads());
     renderer.drawQuads(stage.layerQuads(stage.front, camX, halfW));
     if (cutin?.active) {
       renderer.lookAt(0, 0, zoom); // el cut-in va en coordenadas de pantalla

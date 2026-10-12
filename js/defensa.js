@@ -96,7 +96,7 @@ const deFrente = (def, atq) => Math.sign(atq.x - def.x) === def.dir || atq.x ===
 // contra `defensor`. Devuelve { resultado: 'auto' | 'parada' | 'guardia' | 'rotura' | 'golpe' | null, factor }
 // ('rotura' = el golpe rompió la guardia: `factor` es el daño en guardia y luego va el daño entero).
 // null = la caja del golpe no toca al defensor (o faltan datos y lo decide quien llama).
-export function resolverGolpe(atacante, g, defensor, { reduccion = [0, 0], sueloA = 0, sueloD = 0 } = {}) {
+export function resolverGolpe(atacante, g, defensor, { reduccion = [0, 0], sueloA = 0, sueloD = 0, choque = null } = {}) {
   const d = estado(defensor);
   const opts = { sueloA, sueloD };
   // D58: profundidad (sin attack.f8 exportado, como antes: sin comprobarla).
@@ -104,10 +104,11 @@ export function resolverGolpe(atacante, g, defensor, { reduccion = [0, 0], suelo
   const radio = defensor.radio ?? 0;
   const alcanza = (r, estricto) => g.prof == null || (estricto ? dz < g.prof + r : dz <= g.prof + r);
   let auto = false;
-  if (d.auto.size && alcanza(d.radioAuto || radio) && tocaCajas(atacante, g.caja, defensor, d.auto, opts) && g.parable) auto = true;
-  if (d.parada.size && alcanza(d.radioParada || radio) && tocaCajas(atacante, g.caja, defensor, d.parada, opts)) return { resultado: 'parada', factor: 0 };
+  const toca = (ids) => choque ? choque(ids) : tocaCajas(atacante, g.caja, defensor, ids, opts);
+  if (d.auto.size && alcanza(d.radioAuto || radio) && toca(d.auto) && g.parable) auto = true;
+  if (d.parada.size && alcanza(d.radioParada || radio) && toca(d.parada)) return { resultado: 'parada', factor: 0 };
   if (!alcanza(radio, true)) return { resultado: auto ? 'auto' : null, factor: 0 };
-  const cuerpo = golpeaCaja(atacante, g.caja, defensor, opts);
+  const cuerpo = choque ? choque(null) : golpeaCaja(atacante, g.caja, defensor, opts);
   if (cuerpo === false) return { resultado: auto ? 'auto' : null, factor: 0 };
   // D61: la guardia (virtual 0x4c) solo va con los golpes de daño (attack.f2 = 1, FUN_008389ec).
   if (g.tipo != null && g.tipo !== 1) return { resultado: auto ? 'auto' : 'golpe', factor: 1, sinDatos: cuerpo === null };

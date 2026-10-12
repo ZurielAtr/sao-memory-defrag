@@ -7,7 +7,8 @@
 // - Mientras dura, la animación va a velocidad 0 (FUN_0084f2b8) y la unidad no se mueve (FUN_0083c72c,
 //   FUN_00848e2c); se descuenta en la actualización de la unidad (FUN_008377d8).
 // PROVISIONAL: n = objetivos que ese ataque ya golpeó en la animación (el contador del juego, +0x188,
-// sin leer); sin el estado 0x13 ni FUN_008498b0; las balas no paran a nadie.
+// sin leer); sin el estado 0x13 ni FUN_008498b0; pausa de las balas del jugador pendiente.
+// D71: las balas enemigas aplican pausa a la bala y al defensor, sin parar al emisor (provisional).
 
 export const PAUSA_PARADA = 0.4; // 0x3ecccccd
 
