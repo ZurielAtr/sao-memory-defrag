@@ -1,0 +1,20 @@
+# Este repositorio solo distribuye código. No añadir recursos ni datos del jugador.
+*.apk
+*.apks
+*.obb
+*.so
+*.ckb
+*.ogg
+*.mp3
+*.wav
+*.png
+*.jpg
+*.ssbp
+*.csb
+*.bin
+data/
+assets/
+extraido/
+_prueba/
+*.log
+__pycache__/

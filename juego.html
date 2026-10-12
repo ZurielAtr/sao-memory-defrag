@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAO MD · Escenario de prueba</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { pointer-events: none; }
+  #carga { position: absolute; inset: 0; display: grid; place-items: center; color: #9fd3ff;
+    font: 600 18px "Segoe UI", system-ui, sans-serif; letter-spacing: .1em; background: #050a14; }
+</style>
+</head>
+<body>
+<canvas id="juego"></canvas>
+<canvas id="hud"></canvas>
+<div id="carga">CARGANDO…</div>
+<script type="module" src="js/juego.js"></script>
+</body>
+</html>

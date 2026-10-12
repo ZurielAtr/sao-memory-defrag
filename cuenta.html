@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAO MD · Cuenta</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #070d18; color: #e2ecff; font: 14px "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #9fd3ff; }
+  h2 { font-size: 15px; margin: 22px 0 8px; color: #ffd25a; }
+  .nota { color: #7f90b3; font-size: 12px; }
+  .datos { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .dato { background: #0f1a2e; border: 1px solid #22385c; border-radius: 8px; padding: 8px 12px; min-width: 120px; }
+  .dato b { display: block; font-size: 18px; color: #fff; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #1c2c48; }
+  th { color: #9fb3d6; font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  a { color: #4fb3ff; }
+  button { background: #3a1620; color: #ffc9d2; border: 1px solid #7a2b3b; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .vacio { color: #7f90b3; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cuenta</h1>
+  <div class="nota">Servidor simulado en el navegador (F3, LocalBackend, localStorage). Formatos y reglas
+    PROVISIONALES; la pantalla real es F2. <a href="juego.html">Jugar la Quest 1-1</a></div>
+  <div id="contenido">Cargando…</div>
+</main>
+<script type="module" src="js/cuenta.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAO MD · Historia</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  #carga { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #9fd3ff;
+    font: 14px "Segoe UI", system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="carga">Cargando…</div>
+<script type="module">
+  // Visor de diálogos: historia.html?id=<historia> o ?mision=<misión> (todas las de la misión, en orden).
+  import './js/importador/comprobar.js';
+  import { Historia, historiasDeMision } from './js/ui/historia.js';
+  const params = new URLSearchParams(location.search);
+  const canvas = document.getElementById('c');
+  const ajustar = () => { canvas.width = innerWidth * devicePixelRatio; canvas.height = innerHeight * devicePixelRatio; };
+  addEventListener('resize', ajustar);
+  ajustar();
+  const ids = params.has('mision') ? (await historiasDeMision(params.get('mision'))).map((h) => h.id) : [params.get('id') ?? '1001'];
+  document.getElementById('carga').remove();
+  for (const id of ids) {
+    const h = await Historia.cargar(id);
+    window.__historia = h;
+    if (h) await h.reproducir(canvas);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#9fd3ff';
+  ctx.font = `${16 * devicePixelRatio}px "Segoe UI", sans-serif`;
+  ctx.fillText('Fin', 20 * devicePixelRatio, 30 * devicePixelRatio);
+</script>
+</body>
+</html>

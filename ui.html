@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAO MD · Visor de interfaz (.csb)</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #070d18; color: #e2ecff; font: 13px "Segoe UI", system-ui, sans-serif; }
+  #app { display: flex; height: 100%; }
+  #lado { width: 360px; display: flex; flex-direction: column; border-right: 1px solid #1c2c48; }
+  #lado header { padding: 8px 10px; border-bottom: 1px solid #1c2c48; }
+  #lado select, #lado input { width: 100%; box-sizing: border-box; background: #0f1a2e; color: #e2ecff; border: 1px solid #22385c; border-radius: 4px; padding: 4px; }
+  #arbol { flex: 1; overflow: auto; padding: 6px 4px; font: 12px ui-monospace, Consolas, monospace; }
+  #arbol div { white-space: nowrap; cursor: pointer; padding: 1px 4px; border-radius: 3px; }
+  #arbol div:hover { background: #13223d; }
+  #arbol div.oculto { color: #5b6b8c; }
+  #arbol div.sel { background: #24406e; }
+  #arbol .clase { color: #ffd25a; }
+  #estado { padding: 6px 10px; border-top: 1px solid #1c2c48; min-height: 3em; color: #9fb3d6; white-space: pre-wrap; }
+  #lienzo { flex: 1; position: relative; background: #000; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .nota { color: #7f90b3; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="lado">
+    <header>
+      <b>Visor de .csb</b> <span class="nota">(Cocos Studio, D49)</span>
+      <select id="archivos"><option>cargando lista…</option></select>
+      <div class="nota">Clic en un nodo del árbol: mostrar/ocultar. Clic en la pantalla: nodo interactivo bajo el cursor. Rueda: desplazar listas.</div>
+    </header>
+    <div id="arbol"></div>
+    <div id="estado"></div>
+  </div>
+  <div id="lienzo"><canvas id="c"></canvas></div>
+</div>
+<script type="module" src="js/ui/visor.js"></script>
+</body>
+</html>

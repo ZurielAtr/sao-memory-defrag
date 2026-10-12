@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAO MD · Interfaz</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  #carga { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #9fd3ff;
+    font: 14px "Segoe UI", system-ui, sans-serif; }
+  /* Arriba a la derecha y discreto: abajo tapaba el botón de salir en ventanas bajas (D54). */
+  #nota { position: fixed; right: 8px; top: 6px; color: #5b6b8c; font: 11px "Segoe UI", system-ui, sans-serif;
+    opacity: .7; pointer-events: auto; }
+  #nota a { color: #4fb3ff; }
+  @media (max-height: 560px), (max-width: 520px) { #nota { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="carga">Cargando…</div>
+<div id="nota">Interfaz F2 provisional (D49) · <a href="ui.html">visor de .csb</a> · <a href="cuenta.html">cuenta</a></div>
+<script type="module" src="js/ui/flujo.js"></script>
+</body>
+</html>

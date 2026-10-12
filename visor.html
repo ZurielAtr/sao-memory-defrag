@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visor de personajes · SAO MD</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #111a2c;
+    --line: #22304a;
+    --text: #dbe6ff;
+    --muted: #7f90b3;
+    --accent: #4fb3ff;
+    --accent-2: #ffb547;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 16px; overflow-y: auto; }
+  h1 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 14px; color: var(--accent); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  select, input[type=search] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; font: inherit; }
+  select[size] { height: 220px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; background: #1a2740; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 8px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); color: #04101f; border-color: var(--accent); }
+  .info { margin-top: 16px; font-size: 12px; color: var(--muted); white-space: pre-line; }
+  .err { color: #ff7b7b; }
+  main { position: relative; overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .hud { position: absolute; left: 16px; bottom: 14px; font: 12px ui-monospace, Consolas, monospace; color: var(--muted);
+    background: rgba(11,18,32,.7); padding: 6px 10px; border-radius: 6px; }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
+    main { grid-row: 1; } aside { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>SAO MD · Visor</h1>
+    <label for="filtro">Personaje / unidad</label>
+    <input id="filtro" type="search" placeholder="Filtrar… (kirito, asuna, enemy)">
+    <select id="unidad" size="10"></select>
+
+    <label for="paquete">Paquete</label>
+    <select id="paquete"></select>
+    <label for="anim">Animación</label>
+    <select id="anim"></select>
+    <label for="traje">Traje (textura del cuerpo)</label>
+    <select id="traje"></select>
+    <label for="arma">Arma</label>
+    <select id="arma"></select>
+
+    <label for="velocidad">Velocidad <span id="velTxt">1.0×</span></label>
+    <input id="velocidad" type="range" min="0.1" max="2" step="0.05" value="1">
+    <label for="cuadro">Cuadro <span id="cuadroTxt"></span></label>
+    <input id="cuadro" type="range" min="0" max="0" step="1" value="0">
+    <label for="zoom">Zoom <span id="zoomTxt"></span></label>
+    <input id="zoom" type="range" min="0.2" max="6" step="0.05" value="1">
+
+    <div class="row">
+      <button id="play" class="on">⏸ Pausa</button>
+      <button id="voltear">⇋ Voltear</button>
+    </div>
+    <div class="row">
+      <button id="ajustar">Encuadrar</button>
+      <button id="fondo">Fondo</button>
+    </div>
+    <div id="info" class="info"></div>
+  </aside>
+  <main>
+    <canvas id="lienzo"></canvas>
+    <div class="hud" id="hud"></div>
+  </main>
+</div>
+<script type="module" src="js/visor.js"></script>
+</body>
+</html>
