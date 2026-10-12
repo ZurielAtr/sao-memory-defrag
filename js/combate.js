@@ -76,6 +76,11 @@ export function characterStats(data, id, level = 1) {
     // Igual que FUN_0067bbb0: hasta el máximo usa el tipo del personaje; por encima, lineal.
     out[k] = lv <= max ? growthCurve(a, b, 1, max, lv, c.crecimiento) : growthCurve(b, top, max, cap, lv, 1);
   }
+  for (const k of ['precision', 'evasion']) if (c[k] != null) {
+    const v = c[k];
+    out[k] = Array.isArray(v) ? (lv <= max ? growthCurve(v[0], v[1], 1, max, lv, c.crecimiento)
+      : growthCurve(v[1], v[2], max, cap, lv, 1)) : v;
+  }
   return out;
 }
 
@@ -97,6 +102,9 @@ export function enemyStats(data, id, level) {
   STATS.forEach((k, i) => {
     out[k] = Math.max(0, Math.trunc(lo[i + 1] + f * (hi[i + 1] - lo[i + 1])));
   });
+  for (const [k, i] of [['precision', 6], ['evasion', 7]]) {
+    if (lo[i] != null && hi[i] != null) out[k] = Math.max(0, Math.trunc(lo[i] + f * (hi[i] - lo[i])));
+  }
   return out;
 }
 
@@ -123,7 +131,7 @@ export function critChance(crit) {
  *   crítico: probabilidad pas(atacante, 5, CRIT); multiplicador pas(atacante, 0x4a, 5000)/10000 + 1.
  * Buffs (D61, web/js/buffs.js): cada stat suma terminoBuff (FUN_0083a870) de la unidad.
  */
-export function computeDamage(attacker, defender, { rate = 1, hits = 1, rng = Math.random, pasivas = null, atacante = null, defensor = null, skill = false } = {}) {
+export function computeDamage(attacker, defender, { rate = 1, hits = 1, rng = Math.random, pasivas = null, atacante = null, defensor = null, skill = false, critPorcentajeExtra = 0 } = {}) {
   if (!(rate > 0)) return { dmg: 0, crit: false };
   const pas = (u, tipo, v) => (pasivas && u ? pasivas.consultar(u, tipo, v) : v);
   // D61: los buffs suman rand(0.95, 1.05)·(a + b − 2)·base a cada stat (FUN_0083a870; ATK también el 13).
@@ -140,7 +148,7 @@ export function computeDamage(attacker, defender, { rate = 1, hits = 1, rng = Ma
   const lo = Math.round(total * RNG_MIN);
   const hi = Math.round(total * RNG_MAX);
   let dmg = lo + Math.floor(rng() * (hi - lo + 1));
-  const crit = rng() < critChance(pas(atacante, 5, attacker.crit ?? 0) + buf(atacante, attacker.crit ?? 0, STAT.CRITICO));
+  const crit = rng() < critChance(pas(atacante, 5, attacker.crit ?? 0) + buf(atacante, attacker.crit ?? 0, STAT.CRITICO)) + critPorcentajeExtra / 100;
   dmg /= hits;
   if (crit) dmg *= (pas(atacante, 0x4a, 5000) + buf(atacante, 5000, STAT.DANO_CRITICO)) / 10000 + 1;
   return { dmg: Math.trunc(Math.max(dmg, 1)), crit };

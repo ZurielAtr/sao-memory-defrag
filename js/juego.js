@@ -26,7 +26,7 @@ import { IAEnemigo } from './ia.js';
 import { volverAInterfaz } from './ui/regreso.js';
 import { HudBatalla } from './ui/hud.js';
 import { cargarCajas, anchoCuerpo, PIXELES_POR_UNIDAD } from './cajas.js';
-import { Proyectiles, resolverImpactoBala, colisionarProyectiles } from './proyectiles.js';
+import { Proyectiles, resolverImpactoBala, responderParadaBala, colisionarProyectiles } from './proyectiles.js';
 import { actualizarDefensa, resolverGolpe, recuperarMedidor } from './defensa.js';
 import { pausaDeGolpe, pausar, enPausa, descontarPausa, PAUSA_PARADA } from './impacto.js';
 import { moverConVelocidad, orientar, GIRO_RAIZ } from './movimiento.js';
@@ -37,6 +37,8 @@ import { recibirGolpe, avanzarEstados, activar, activo, factorVelocidad, sinCura
 import { puedeCambiar, skillDeEntrada, llegada, ESPERA_CAMBIO, DISTANCIA_ENTRADA } from './switch.js';
 import { Historia, historiasDeMision } from './ui/historia.js';
 import { audio } from './audio/index.js';
+import { bonosCargaRifle, animacionAtaqueRifle } from './carga_rifle.js';
+import { MiraProyectiles } from './mira_proyectiles.js';
 import { montarAjustes } from './audio/ajustes.js';
 
 const params = new URLSearchParams(location.search);
@@ -221,6 +223,7 @@ function makePlayer(ch, skills = SKILLS_SIN_DATOS) {
 // master data, en p.skillData (cargarMiembro, si existen para la unidad del personaje).
 let IA_DATA = null; // web/data/ia/<patrón>.json de la misión (D47, D55)
 let hudCsb = null; // D54: HUD con los .csb del juego (ui/hud.js); ?hud=0 = el provisional de abajo
+let miraProyectiles = null;
 let pasivas = null; // D60: pasivas de todas las unidades de la batalla (pasivas.js)
 let TABLA_ESTADOS = null; // D62: web/data/estados.json (abnormal_state)
 // D62: virtual 0x454 (FUN_00853bb8): resistencia de cada estado por pasivas (tipos 0x53–0x5a, 0x5b, 0x51,
@@ -324,8 +327,9 @@ function curar(cura, objetivo, g) {
 const aSiMismo = (u, g) => (u.esPersonaje ? TIPOS_PERSONAJE : TIPOS_ENEMIGO).has(g.tipo) || g.tipo === (u.esPersonaje ? 6 : 7) || g.tipo === 2 || g.tipo === 10;
 
 // Daño de un golpe con las pasivas del golpe en curso (D42 + D60).
-const danoDe = (atacante, defensor, rate, skill = false) =>
-  computeDamage(atacante.stats, defensor.stats, { rate, pasivas, atacante, defensor, skill });
+const danoDe = (atacante, defensor, rate, skill = false, bala = null) =>
+  computeDamage(atacante.stats, defensor.stats, { rate, pasivas, atacante, defensor, skill,
+    critPorcentajeExtra: bonosCargaRifle(bala?.nivelCarga).critPorcentaje });
 // D60: si el daño mata, las pasivas 0x50 lo pueden bajar (FUN_00839fa0).
 const danoFinal = (defensor, dmg) => (pasivas ? Math.trunc(pasivas.danoFinal(defensor, dmg)) : dmg);
 const skillInfo = (p, name) => p?.skillData?.[name];
@@ -423,7 +427,9 @@ function startAttack(p, n) {
   p.queued = false;
   p.hitDone = false;
   empezarEventos(p);
-  p.play(`attack_${n}`, { restart: true });
+  const nombre = animacionAtaqueRifle(p, n);
+  p.timing[nombre] ??= attackTiming(p, nombre, n < 3 ? animacionAtaqueRifle(p, n + 1) : null);
+  p.play(nombre, { restart: true });
 }
 
 // D50: golpes del jugador en los cuadros de character.f18 (tipo 1): cada id de attack.json pega
@@ -741,11 +747,11 @@ function objetivos(p, foes, { reach, behind, area, exclude = null }) {
   return area ? inRange : [inRange.reduce((a, b) => (Math.abs(b.x - p.x) < Math.abs(a.x - p.x) ? b : a))];
 }
 
-function hitEnemy(p, e, { mult, final, drag, guardia = false, golpe = null, factorGuardia = null }) {
-  conGolpe(p, e, golpe, () => golpeAEnemigo(p, e, { mult, final, drag, guardia, golpe, factorGuardia }));
+function hitEnemy(p, e, { mult, final, drag, guardia = false, golpe = null, factorGuardia = null, bala = null }) {
+  conGolpe(p, e, golpe, () => golpeAEnemigo(p, e, { mult, final, drag, guardia, golpe, factorGuardia, bala }));
 }
 
-function golpeAEnemigo(p, e, { mult, final, drag, guardia, golpe, factorGuardia }) {
+function golpeAEnemigo(p, e, { mult, final, drag, guardia, golpe, factorGuardia, bala }) {
   e.aggro = true;
   // Ataques normales: multiplicadores reales de attack.json. Los que tienen 2 golpes (attack_2,
   // attack_3) se calculan por separado (cada uno con su azar y su crítico, como FUN_0083ad60) y se
@@ -754,7 +760,7 @@ function golpeAEnemigo(p, e, { mult, final, drag, guardia, golpe, factorGuardia 
   let dmg = 0;
   let crit = false;
   for (const rate of rates) {
-    const hit = danoDe(p, e, rate, p.state === 'skill');
+    const hit = danoDe(p, e, rate, p.state === 'skill', bala);
     dmg += hit.dmg;
     crit ||= hit.crit;
   }
@@ -1092,36 +1098,68 @@ function empezarParada(p) {
 }
 
 function impactoEnemigo(p, e, g, b) {
-  if (!(p.hp > 0) || playerInvulnerable(p)) return;
+  if (!(p.hp > 0) || playerInvulnerable(p)) return { consumirImpacto: false };
   const r = resolverImpactoBala(b, g, p);
   if (r.auto) empezarParada(p);
   if (r.resultado === 'parada') {
     popup(p.x, p.y + 300 * CHAR_SCALE, 'PARRY', '#ffe28a');
-    if (g.parable) pausar(p, PAUSA_PARADA);
-    b.muerta = true; // provisional: destruir la bala parada; no parar a su emisor
-    return;
+    if (g.tipo === 1 && g.parable) { pausar(p, PAUSA_PARADA); pausar(b, PAUSA_PARADA); }
+    return responderParadaBala(b, p, g, { equipo: 'jugador' });
   }
-  if (!r.resultado || r.resultado === 'auto') return;
+  if (!r.resultado || r.resultado === 'auto') return { consumirImpacto: false };
   if (noHaceDano(g)) { golpeSinDano(e, p, g); return; }
+  if (!aciertaProyectil(b, p)) { popup(p.x, p.y + 260 * CHAR_SCALE, 'MISS', '#dbe6ff'); return; }
   const cubierto = r.resultado === 'guardia' || r.resultado === 'rotura';
-  hitPlayer(p, e, [g.mult * r.factor], { guardia: cubierto, golpe: g, factorGuardia: r.factor, direccion: b.sentido });
+  hitPlayer(p, e, [g.mult * r.factor], { guardia: cubierto, golpe: g, factorGuardia: r.factor, direccion: b.sentido, bala: b });
   if (r.resultado === 'rotura' && p.hp > 0) {
     popup(p.x, p.y + 330 * CHAR_SCALE, 'GUARD BREAK', '#7fd0ff');
-    hitPlayer(p, e, [g.mult], { golpe: g, direccion: b.sentido });
+    hitPlayer(p, e, [g.mult], { golpe: g, direccion: b.sentido, bala: b });
     if (p.hp > 0) aturdir(p);
   }
   // Provisional: pausa del defensor; la bala no detiene la animación del emisor.
   pausaDeGolpe(b, p, g);
 }
 
-function hitPlayer(p, e, rates = e.normales.attack_1 ?? [1], { guardia = false, golpe = null, factorGuardia = null, direccion = e.dir } = {}) {
-  conGolpe(e, p, golpe, () => golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion }));
+function impactoProyectil(objetivo, rate, final, g, b) {
+  // La reflexión conserva el dueño y sus stats; el nuevo bando solo cambia los blancos.
+  const emisor = b.emisor;
+  if (objetivo.esPersonaje) return impactoEnemigo(objetivo, emisor, g, b);
+  const r = resolverImpactoBala(b, g, objetivo);
+  if (r.auto) empezarParada(objetivo);
+  if (r.resultado === 'parada') {
+    popup(objetivo.x, objetivo.y + 300 * CHAR_SCALE, 'PARRY', '#ffe28a');
+    if (g.tipo === 1 && g.parable) { pausar(objetivo, PAUSA_PARADA); pausar(b, PAUSA_PARADA); }
+    return responderParadaBala(b, objetivo, g, { equipo: 'enemigo' });
+  }
+  if (!r.resultado || r.resultado === 'auto') return { consumirImpacto: false };
+  if (noHaceDano(g)) { golpeSinDano(emisor, objetivo, g); return; }
+  if (!aciertaProyectil(b, objetivo)) { popup(objetivo.x, objetivo.y + 260 * CHAR_SCALE, 'MISS', '#dbe6ff'); return; }
+  const guardia = r.resultado === 'guardia' || r.resultado === 'rotura';
+  hitEnemy(emisor, objetivo, { mult: rate * r.factor, final, guardia, golpe: g, factorGuardia: r.factor, bala: b });
+  if (r.resultado === 'rotura' && objetivo.alive) {
+    hitEnemy(emisor, objetivo, { mult: rate, final, golpe: g, bala: b });
+    if (objetivo.alive) aturdir(objetivo);
+  }
+  pausaDeGolpe(b, objetivo, g);
 }
 
-function golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion }) {
+function aciertaProyectil(b, defensor) {
+  // 00820ff0 y 00839ae4: el nivel2 resta10000 después del clamp de precisión.
+  const dueno = b.emisor, base = dueno.stats.precision ?? 10000;
+  const evasion = defensor.stats.evasion ?? 0;
+  const precisionFinal = Math.max(0, base + terminoBuff(dueno, base, 6));
+  const evasionFinal = Math.max(0, evasion + terminoBuff(defensor, evasion, STAT.EVASION));
+  return Math.floor(Math.random() * 10000) < precisionFinal + bonosCargaRifle(b.nivelCarga).precision - evasionFinal;
+}
+
+function hitPlayer(p, e, rates = e.normales.attack_1 ?? [1], { guardia = false, golpe = null, factorGuardia = null, direccion = e.dir, bala = null } = {}) {
+  conGolpe(e, p, golpe, () => golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion, bala }));
+}
+
+function golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion, bala }) {
   if (guardia) { // D53: golpe en guardia: daño reducido, sigue cubriéndose
     let dmg = 0;
-    for (const rate of rates) dmg += danoDe(e, p, rate).dmg;
+    for (const rate of rates) dmg += danoDe(e, p, rate, false, bala).dmg;
     dmg = danoFinal(p, dmg);
     p.hp = Math.max(0, p.hp - dmg);
     popup(p.x, p.y + 260 * CHAR_SCALE, `GUARD ${dmg}`, '#7fd0ff');
@@ -1137,7 +1175,7 @@ function golpeAJugador(p, e, rates, { guardia, golpe, factorGuardia, direccion }
     return;
   }
   let dmg = 0;
-  for (const rate of rates) dmg += danoDe(e, p, rate).dmg;
+  for (const rate of rates) dmg += danoDe(e, p, rate, false, bala).dmg;
   dmg = danoFinal(p, dmg);
   p.hp = Math.max(0, p.hp - dmg);
   shake = 0.18;
@@ -1844,13 +1882,15 @@ async function main() {
   if (params.has('volver')) progreso.mostrar = (data) => volverAInterfaz(params.get('volver'), { mision: MISSION_ID, dificultad: DIFFICULTY, personaje: PLAYER_ID, grupo: GRUPO_IDS.join(','), tiempo: battle?.elapsed, ...data });
   TABLA_ESTADOS = await fetch(rutaWeb('/data/estados.json')).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   pasivas = new Pasivas(await cargarPasivas(), { combo: () => combo.count }); // D60
-  const [stages, shadowImg, miembros, protos] = await Promise.all([
+  const [stages, shadowImg, miembros, protos, mira] = await Promise.all([
     Promise.all(stageIds.map(async (id) => [id, await Stage.load(renderer, id)])).then((e) => new Map(e)),
     loadImage(rutaWeb('/assets/images/battle/shadow.png')),
     Promise.all(GRUPO_IDS.map((id, i) => cargarMiembro(id, i, combat))),
     Promise.all([...kinds].map(async ([k, m]) => [k, await Character.load(renderer, m.unidad, { scale: CHAR_SCALE, costume: m.traje ?? undefined })]))
       .then((e) => new Map(e)),
+    MiraProyectiles.cargar(renderer),
   ]);
+  miraProyectiles = mira;
   grupo = miembros;
   const player = grupo[0];
   const shadow = renderer.createTexture(shadowImg);
@@ -1897,7 +1937,9 @@ async function main() {
     // D61: las balas que no hacen daño aplican su buff al enemigo (las de buff propio: sin portar). Las de
     // quien acaba de salir siguen su camino.
     for (const m of grupo) {
-      m.proyectiles.update(dt, m, foes, (e, rate, final, atk) => (noHaceDano(atk) ? golpeSinDano(m, e, atk) : hitEnemy(m, e, { mult: rate, final, golpe: atk })));
+      m.proyectiles.update(dt, m, foes, impactoProyectil, {
+        objetivosBala: (b) => b.equipo === 'enemigo' ? (player.hp > 0 && !playerInvulnerable(player) ? [player] : []) : foes,
+      });
     }
     for (const e of foes) {
       if (e.hidden || enPausa(e)) continue;
@@ -1908,10 +1950,13 @@ async function main() {
     }
     for (const e of foes) {
       const objetivos = player.hp > 0 && !playerInvulnerable(player) ? [player] : [];
-      e.proyectiles.update(dt, e, objetivos, (p, rate, final, g, b) => impactoEnemigo(p, e, g, b),
-        { emitir: e.alive && !e.hidden && !enPausa(e) });
+      e.proyectiles.update(dt, e, objetivos, impactoProyectil,
+        { emitir: e.alive && !e.hidden && !enPausa(e), objetivosBala: (b) => b.equipo === 'jugador' ? foes : objetivos });
     }
     colisionarProyectiles([...grupo, ...foes].map((u) => u.proyectiles));
+    miraProyectiles.actualizar(player.apuntado57, player, {
+      ficha: player.proyectiles.datos.balas[player.apuntado57?.bala],
+    });
     descontarPausa(player, dt);
     for (const e of foes) descontarPausa(e, dt);
     // D62: bucle de estados (FUN_0084997c): medidores, temporizadores, diferidos y ticks.
@@ -1987,6 +2032,7 @@ async function main() {
     renderer.drawQuads(bodies.flatMap((c) => c.quads()));
     for (const m of grupo) renderer.drawQuads(m.proyectiles.quads());
     for (const e of foes) renderer.drawQuads(e.proyectiles.quads());
+    renderer.drawQuads(miraProyectiles.quads());
     renderer.drawQuads(stage.layerQuads(stage.front, camX, halfW));
     if (cutin?.active) {
       renderer.lookAt(0, 0, zoom); // el cut-in va en coordenadas de pantalla
@@ -2001,6 +2047,7 @@ async function main() {
     get player() { return battle.player; }, grupo, cambiar, battle, step, get cutin() { return cutin; }, progreso, pasivas, combo,
     hud: hudCsb, get proyectiles() { return battle.player.proyectiles; }, get enemies() { return battle.enemies; },
     get historia() { return historiaEnCurso; }, get historiasPendientes() { return historiasPendientes; },
+    get mira() { return miraProyectiles; },
   };
 
   let last = performance.now();

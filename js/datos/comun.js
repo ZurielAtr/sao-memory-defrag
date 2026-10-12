@@ -149,5 +149,5 @@ export async function enemigosStats(fuente) {
   return out;
 }
 
-/** [nivel, HP, MP, ATK, DEF, CRIT] por fila (como combate.json). */
-export const porNivel = (filas) => filas.map((row) => [row.nivel, ...row.v.slice(1, 6)]);
+/** [nivel, HP, MP, ATK, DEF, CRIT, precisión, evasión] por fila (como combate.json). */
+export const porNivel = (filas) => filas.map((row) => [row.nivel, ...row.v.slice(1, 6), row.v[15] ?? 10000, row.v[16] ?? 0]);

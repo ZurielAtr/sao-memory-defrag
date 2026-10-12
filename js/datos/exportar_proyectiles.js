@@ -109,6 +109,7 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
           ataque: x[3], guardia: get(a, 'f7', 0), parable: verdad(get(a, 'f44')), medidor: o(get(a, 'f23', 0), 0),
           pausa: ['f25', 'f26', 'f32', 'f33'].map((k) => o(get(a, k, 0), 0)), clase: get(a, 'f1', 0), odio: get(a, 'f61', 0) };
         g.balas = verdad(get(a, 'f34')); g.objetivo = get(a, 'f5', 0);
+        g.retrocesoX = get(a, 'f19', 0); // 008228d4: signo de salida al reflejar.
         if (g.tipo === 2 || g.tipo === 10) g.cura = { tope: o(get(a, 'f46', 0), 0), div: o(get(a, 'f4', 1), 1) };
         if (TIPOS_BUFF.includes(g.tipo)) g.buff = buffDe(a);
         const [est, anormal] = estadosDe(a);

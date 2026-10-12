@@ -165,6 +165,7 @@ export async function exportarPersonajes(fuente, salida) {
       nivelMax: maxLv.get(get(r, 'f1')) ?? null,
       crecimiento: get(r, 'f8', 1),
       stats: Object.fromEntries(STATS.map((k, i) => [k, STAT_FIELDS[i]]).filter(([, f]) => f in r).map(([k, f]) => [k, r[f]])),
+      precision: get(r, 'f59', 10000), evasion: get(r, 'f60', 0),
       normales: normalHits(r, attacks),
       unidad: pkg,
       unidadId: unit.f0,

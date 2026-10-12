@@ -83,7 +83,8 @@ export function buildCharacterQuads(ssbp, textures, pack, anim, frameNo, opts = 
     const s = byPart[i];
     const part = pack.parts[i];
     const parent = part.parent >= 0 ? mats[part.parent] : base;
-    mats[i] = s ? mul(parent, localMatrix(s)) : parent;
+    const ajuste = opts.rotaciones?.get(part.name) ?? 0;
+    mats[i] = s ? mul(parent, localMatrix(ajuste ? { ...s, rotZ: s.rotZ + ajuste } : s)) : parent;
   }
 
   const globalAlpha = opts.alpha ?? 1;

@@ -28,6 +28,9 @@ import { enPausa, descontarPausa } from './impacto.js';
 import { parametrosSeguimiento, orientarTeledirigida } from './teledireccion.js';
 import { resolverColisionesBalas } from './colision_balas.js';
 import { configurarApuntado57, actualizarApuntado57, alcanceApuntado57 } from './apuntado_proyectiles.js';
+import { reflejarBala } from './reflexion_proyectiles.js';
+import { nivelCargaRifle } from './carga_rifle.js';
+import { rotacionArma57 } from './rotacion_arma.js';
 
 export const TIPOS_DISPARO = [4, 57, 87];
 
@@ -62,7 +65,7 @@ export function puntoSalida(p, disparo) {
     z: (p.z ?? 0) + (disparo.tipo === 4 ? disparo.f4 ?? 0 : 0), suelo: p.suelo ?? p.y - (p.alt ?? 0), angulo };
 }
 
-export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null, angulo = 0, anguloHeredado = 0, emisor = null, objetivo = null, equipo = null }) {
+export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null, angulo = 0, anguloHeredado = 0, emisor = null, objetivo = null, equipo = null, nivelCarga = 1 }) {
   const evs = ficha.eventos ?? {};
   // FUN_00821550: tipo1 appear; 2/4 wait; 3 dead; 5 ground. Respaldo para catálogos antiguos.
   const fis = ficha.fisica;
@@ -79,7 +82,7 @@ export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null, angulo
     id: Number(id), ficha, x, y, dir, sentido: dir * (Math.sign(ficha.velocidad) || 1), x0: x, z, suelo,
     fase, t: 0, cuadro: -1, vida: 0, paso: 0, vx, vy, vz, z0: z, impactos: 0, tiempoSuelo: 0,
     emisor, objetivo, offsetEmisor: emisor ? [x - emisor.x, z - (emisor.z ?? 0)] : null,
-    hp: fis?.hp ?? ficha.crudo?.f12 ?? 0, equipo, cuerpos: new Set(), anguloSalida,
+    hp: fis?.hp ?? ficha.crudo?.f12 ?? 0, equipo, cuerpos: new Set(), anguloSalida, nivelCarga,
     objetivoSeguimiento: parametrosSeguimiento(ficha).giro > 0 ? objetivo : null, tiempoSeguimiento: 0,
     artFacing: fis?.artFacing ?? 1,
     golpeados: new Map(), // attack id -> Set de enemigos ya golpeados (un golpe por enemigo y ventana)
@@ -165,6 +168,20 @@ export function tocaCaja(b, idCaja, e, suelo = 0, ids = null) {
   });
 }
 
+// La caja de parada suele sobresalir del cuerpo: puede interceptar antes de que lo toque.
+export function tocaDefensasBala(b, caja, e, suelo = 0) {
+  const g = b.ficha.ataques?.[b.activas.get(caja) ?? b.ficha.ataque] ?? {};
+  const d = e.defensa;
+  const profundidad = g.prof == null ? Infinity : g.prof * (b.ficha.fisica?.escala ?? 1);
+  const dz = Math.abs((e.z ?? 0) - (b.z ?? 0));
+  if (d?.parada?.size && dz <= profundidad + (d.radioParada || e.radio || 0) &&
+      tocaCaja(b, caja, e, suelo, d.parada)) return true;
+  if (g.parable && d?.auto?.size && dz <= profundidad + (d.radioAuto || e.radio || 0) &&
+      tocaCaja(b, caja, e, suelo, d.auto)) return true;
+  if (dz >= profundidad + (e.radio ?? 0)) return false;
+  return tocaCaja(b, caja, e, suelo);
+}
+
 function segmentoRect(x0, y0, x1, y1, r) {
   let desde = 0, hasta = 1;
   for (const [origen, delta, min, max] of [[x0, x1 - x0, r.x, r.x + r.w], [y0, y1 - y0, r.y, r.y + r.h]]) {
@@ -183,6 +200,19 @@ export function resolverImpactoBala(b, g, defensor) {
   const atq = { x: b.x - dir * Math.max(b.paso, 0.001), dir, z: b.z };
   return resolverGolpe(atq, { ...g, prof: g.prof == null ? g.prof : g.prof * (b.ficha.fisica?.escala ?? 1) }, defensor, { reduccion: defensor.reduccion,
     choque: (ids) => tocaCaja(b, g.caja, defensor, b.suelo ?? 0, ids) ?? (ids ? false : true) });
+}
+
+// 008395f0 -> 008221f0: la parada puede reflejar o restar HP; no mata siempre la bala.
+export function responderParadaBala(b, defensor, g, opciones = {}) {
+  const reflejo = reflejarBala(b, defensor, g, opciones);
+  if (reflejo) return reflejo;
+  if (g.tipo === 1 && g.parable && b.hp > 0 && !b.muerta && !b.agotada &&
+      (b.fase === 'wait' || (b.fase === 'appear' && !b.ficha.fisica?.sinImpactoAppear))) {
+    // Getter308 de BattleBullet devuelve10 contra actores; getter310 base del actor =1.
+    b.hp = Math.max(0, b.hp - 10);
+    if (!b.hp) agotarBala(b);
+  }
+  return { cortar: true, consumirImpacto: false, reflejada: false };
 }
 
 /**
@@ -240,7 +270,8 @@ export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = (
         // PROVISIONAL: la bala en vuelo se para en el primer enemigo que toca (el más atrás en su recorrido).
         const e = tocados.reduce((a, c) => ((c.x - a.x) * b.sentido < 0 ? c : a));
         ya.add(e);
-        golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
+        const respuesta = golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
+        if (respuesta?.cortar || respuesta?.consumirImpacto === false) return hijas;
         cambiarFase(b, 'dead');
         if (!numFrames('dead') && !f.eventos?.dead) b.muerta = true;
         return hijas;
@@ -326,15 +357,19 @@ function moverBalaOriginal(b, dt, foes, golpear, numFrames, toca) {
       const atk = f.ataques?.[ref] ?? { mult: f.multiplicador ?? 1 };
       const tocados = foes.filter((e) => {
         if (!vivo(e) || ya.has(e)) return false;
-        if (atk.prof != null && Math.abs((e.z ?? 0) - b.z) >= atk.prof * (fis.escala ?? 1) + (e.radio ?? 0)) return false;
+        const radio = Math.max(e.radio ?? 0, e.defensa?.parada?.size ? e.defensa.radioParada ?? e.radio ?? 0 : 0,
+          atk.parable && e.defensa?.auto?.size ? e.defensa.radioAuto ?? e.radio ?? 0 : 0);
+        if (atk.prof != null && Math.abs((e.z ?? 0) - b.z) > atk.prof * (fis.escala ?? 1) + radio) return false;
         const choque = toca(b, caja, e);
         if (choque !== null) return choque;
         return Math.abs(e.x - b.x) <= PROVISIONAL.choque + b.paso;
       }).sort((a, c) => (a.x - c.x) * b.sentido);
       for (const e of tocados) {
-        ya.add(e); golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
+        ya.add(e);
+        const respuesta = golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
+        if (respuesta?.cortar) break;
         if (b.muerta) break;
-        if (fis.impactos > 0 && (fase === 'wait' || (fase === 'appear' && !fis.sinImpactoAppear))) {
+        if (respuesta?.consumirImpacto !== false && fis.impactos > 0 && (fase === 'wait' || (fase === 'appear' && !fis.sinImpactoAppear))) {
           b.impactos++;
           if (b.impactos >= fis.impactos) { agotarBala(b); break; }
         }
@@ -458,7 +493,7 @@ export class Proyectiles {
   disparar(id, pos) {
     const ficha = this.datos.balas[id];
     if (!ficha) return;
-    this.balas.push(crearBala(id, ficha, { ...pos, equipo: this.equipo ?? pos.equipo }));
+    this.balas.push(crearBala(id, ficha, { ...pos, equipo: pos.equipo ?? this.equipo }));
     this.disparadas++;
   }
 
@@ -468,15 +503,16 @@ export class Proyectiles {
    * @param {Character[]} foes
    * @param {(e, rate: number, final: boolean, atk) => void} golpear  aplica un golpe de bala (atk.tipo: D61)
    */
-  update(dt, p, foes, golpear, { emitir = true } = {}) {
-    if (emitir) this.seguirAnimacion(p, foes, dt);
-    const toca = (b, caja, e) => tocaCaja(b, caja, e, this.suelo);
+  update(dt, p, foes, golpear, { emitir = true, objetivosBala = null } = {}) {
+    if (emitir) this.seguirAnimacion(p, foes, enPausa(p) ? 0 : dt);
+    const toca = (b, caja, e) => tocaDefensasBala(b, caja, e, b.suelo ?? this.suelo);
     const existentes = this.balas.length;
     for (let i = 0; i < existentes; i++) {
       const b = this.balas[i];
       if (enPausa(b)) { descontarPausa(b, dt); continue; }
       const faseAntes = b.fase, tiempoAntes = b.t;
-      const hijas = moverBala(b, dt, foes, golpear, (fase) => this.cuadrosDe(b, fase), toca);
+      const blancos = objetivosBala ? objetivosBala(b) : foes;
+      const hijas = moverBala(b, dt, blancos, golpear, (fase) => this.cuadrosDe(b, fase), toca);
       if (this.sueloDe) {
         const suelo = this.sueloDe(b.z);
         b.y += suelo - (b.suelo ?? suelo); b.suelo = suelo;
@@ -498,7 +534,7 @@ export class Proyectiles {
       };
       emitir(faseAntes, tiempoAntes);
       if (b.fase !== faseAntes && !b.muerta) emitir(b.fase, 0);
-      for (const h of hijas) this.disparar(h.id, h);
+      for (const h of hijas) this.disparar(h.id, { ...h, equipo: b.equipo });
     }
     this.balas = this.balas.filter((b) => !b.muerta);
   }
@@ -520,13 +556,27 @@ export class Proyectiles {
     for (const d of eventosEntre(disparos, s.cuadro, p.frame)) {
       const salida = puntoSalida(p, d);
       if (d.tipo === 57) this.apuntado = configurarApuntado57(d, p, salida, this.apuntado);
-      else { this.disparar(d.bala, { ...salida, dir: p.dir, emisor: p, objetivo }); this.apuntado = null; }
+      else {
+        const nivelCarga = nivelCargaRifle(this.apuntado?.tiempoObjetivo ?? 0, {
+          arma: p.arma ?? p.pj?.arma, motion: p.state === 'skill' ? 10 : 9,
+          ajusteTiempo: this.apuntado?.ajusteTiempo ?? 0,
+        });
+        this.disparar(d.bala, { ...salida, dir: p.dir, emisor: p, objetivo, nivelCarga });
+        this.apuntado = null;
+      }
     }
     if (this.apuntado) actualizarApuntado57(this.apuntado, { x: p.x, y: p.alt ?? p.y - (p.suelo ?? 0), z: p.z }, vivos, {
       ficha: this.datos.balas[this.apuntado.bala], alcance: alcanceApuntado57(disparos, this.datos.balas),
       geometria: geometriaObjetivoBala, preferido: objetivo, dt, conservarTiempo: p.state === 'attack' || p.state === 'skill',
     });
     p.apuntado57 = this.apuntado;
+    // Mantener la orientación durante la salida; quitarla al dejar el ataque.
+    if (this.apuntado) p.rotacionArma57 = rotacionArma57(this.apuntado, p);
+    else if (p.state !== 'attack') p.rotacionArma57 = null;
+    p.nivelCargaRifle = nivelCargaRifle(this.apuntado?.tiempoObjetivo ?? 0, {
+      arma: p.arma ?? p.pj?.arma, motion: p.state === 'skill' ? 10 : 9,
+      ajusteTiempo: this.apuntado?.ajusteTiempo ?? 0,
+    });
     s.cuadro = p.frame;
   }
 

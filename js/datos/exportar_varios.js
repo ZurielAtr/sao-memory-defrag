@@ -269,6 +269,7 @@ export async function exportarCombate(fuente, salida, stats, pjs = COMBATE_PJ, e
     out.personajes[cid] = {
       nombre: r.f2, rareza: r.f1, arma: r.f3, elemento: r.f9, nivelMax: maxLv.get(r.f1) ?? null,
       crecimiento: get(r, 'f8', 1), stats: structs.get(cid), normales: normalHits(r, attacks),
+      precision: get(r, 'f59', 10000), evasion: get(r, 'f60', 0),
     };
   }
   const enemies = await fuente.enemigos();

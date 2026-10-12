@@ -11,6 +11,7 @@ import { rutaWeb } from './rutas.js';
 import { parseSSBP, decodeFrame } from './ssbp.js';
 import { buildCharacterQuads, POSITION_SCALE } from './renderer.js';
 import { sonidosCruzados } from './audio/eventos.js';
+import { huesoRotacionArma } from './rotacion_arma.js';
 
 const api = async (path) => (await fetch(rutaWeb(`/api/ls?path=${encodeURIComponent(path)}`))).json();
 
@@ -207,6 +208,9 @@ export class Character {
       scale: this.scale,
       flipX: this.dir !== this.artFacing,
       alpha: this.alpha,
+      // El espejo horizontal invierte el signo del giro en el mundo.
+      rotaciones: this.rotacionArma57 ? new Map([[huesoRotacionArma(this.pack),
+        this.rotacionArma57 * (this.dir !== this.artFacing ? -1 : 1) * 180 / Math.PI]]) : null,
     });
   }
 }

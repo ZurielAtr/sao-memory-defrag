@@ -19,6 +19,7 @@ Se recomienda ordenador con teclado. Los controles táctiles están pendientes y
 
 - Flechas o WASD: moverse.
 - Z: atacar; con rifle, sostener para apuntar y soltar para disparar. Espacio: saltar.
+- La carga del rifle alterna ventanas de disparo normal, menor precisión y crítico. Una parada puede devolver los proyectiles que admiten reflexión.
 - C: guardia; C + Espacio: parada. X: paso atrás.
 - 1–4: skills. Q/E/R: cambiar al personaje 1/2/3.
 
