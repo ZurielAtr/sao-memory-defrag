@@ -18,7 +18,7 @@ Se recomienda ordenador con teclado. Los controles táctiles están pendientes y
 ## Controles de combate
 
 - Flechas o WASD: moverse.
-- Z: atacar. Espacio: saltar.
+- Z: atacar; con rifle, sostener para apuntar y soltar para disparar. Espacio: saltar.
 - C: guardia; C + Espacio: parada. X: paso atrás.
 - 1–4: skills. Q/E/R: cambiar al personaje 1/2/3.
 

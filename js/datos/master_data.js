@@ -15,6 +15,9 @@ const utf8 = new TextDecoder('utf-8'); // sustituye lo inválido por U+FFFD, com
 
 // Anchos de campos escalares confirmados en el binario (Ghidra), por archivo y ruta (master_data.py).
 export const ANCHOS_CONFIRMADOS = {
+  'bullet.bin': {
+    'registro.f24': 4, // radio de teledirección: 00821bf0 lee int32, nunca vector.
+  },
   'stage.bin': {
     'raiz.f1.f1.f10.f4': 1, // BattleGate: estado inicial (FUN_00834f50 lee un byte)
     'raiz.f1.f1.f11.f1': 1, // BattleEnemyAppear: tipo (FUN_00834590)
@@ -212,7 +215,9 @@ export class Decoder {
     for (const [i, lst] of slots) {
       let kind = 'scalar';
       const ruta = `${sig}.f${i}`;
-      if (gaps.get(i) > 8) {
+      if (this.widths[ruta] != null) {
+        kind = 'scalar'; // La evidencia del binario prevalece sobre la inferencia de offsets.
+      } else if (gaps.get(i) > 8) {
         kind = 'struct';
         this.structSize.set(ruta, gaps.get(i));
         this.structPos.set(ruta, lst.map(([, pos]) => pos));

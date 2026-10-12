@@ -26,7 +26,7 @@ import { IAEnemigo } from './ia.js';
 import { volverAInterfaz } from './ui/regreso.js';
 import { HudBatalla } from './ui/hud.js';
 import { cargarCajas, anchoCuerpo, PIXELES_POR_UNIDAD } from './cajas.js';
-import { Proyectiles, resolverImpactoBala } from './proyectiles.js';
+import { Proyectiles, resolverImpactoBala, colisionarProyectiles } from './proyectiles.js';
 import { actualizarDefensa, resolverGolpe, recuperarMedidor } from './defensa.js';
 import { pausaDeGolpe, pausar, enPausa, descontarPausa, PAUSA_PARADA } from './impacto.js';
 import { moverConVelocidad, orientar, GIRO_RAIZ } from './movimiento.js';
@@ -568,6 +568,12 @@ function updatePlayer(p, foes, dt) {
       const t = p.timing[p.anim.name];
       const ev = p.eventosGolpe?.[p.anim.name];
       aplicarImpulsos(p, ev, dt);
+      // D73: mantener ataque prepara el rifle; soltarlo libera el evento4 de attack_2.
+      // 0082790c conserva la motion9 del arma6 al acabar su preparación.
+      if (p.proyectiles.preparaApuntado(p)) {
+        if (p.done && !isHeld('attack') && p.has('attack_2')) startAttack(p, 2);
+        break;
+      }
       if (ev) golpesDeEventos(p, foes, ev);
       else if (!p.hitDone && p.frame >= t.hit) { p.hitDone = true; tryHit(p, foes); }
       if (p.queued && p.combo < 3 && p.frame >= t.cancel && p.has(`attack_${p.combo + 1}`)) {
@@ -1905,6 +1911,7 @@ async function main() {
       e.proyectiles.update(dt, e, objetivos, (p, rate, final, g, b) => impactoEnemigo(p, e, g, b),
         { emitir: e.alive && !e.hidden && !enPausa(e) });
     }
+    colisionarProyectiles([...grupo, ...foes].map((u) => u.proyectiles));
     descontarPausa(player, dt);
     for (const e of foes) descontarPausa(e, dt);
     // D62: bucle de estados (FUN_0084997c): medidores, temporizadores, diferidos y ticks.

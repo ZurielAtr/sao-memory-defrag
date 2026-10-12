@@ -108,6 +108,7 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
         const g = { mult: o(get(a, 'f3'), 0) / 10000, final: get(a, 'f10') === 1001, prof: o(get(a, 'f8', 0), 0), tipo: o(get(a, 'f2', 0), 0),
           ataque: x[3], guardia: get(a, 'f7', 0), parable: verdad(get(a, 'f44')), medidor: o(get(a, 'f23', 0), 0),
           pausa: ['f25', 'f26', 'f32', 'f33'].map((k) => o(get(a, k, 0), 0)), clase: get(a, 'f1', 0), odio: get(a, 'f61', 0) };
+        g.balas = verdad(get(a, 'f34')); g.objetivo = get(a, 'f5', 0);
         if (g.tipo === 2 || g.tipo === 10) g.cura = { tope: o(get(a, 'f46', 0), 0), div: o(get(a, 'f4', 1), 1) };
         if (TIPOS_BUFF.includes(g.tipo)) g.buff = buffDe(a);
         const [est, anormal] = estadosDe(a);
@@ -163,6 +164,8 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
       borrarAlAlcance: verdad(get(b, 'f45')), apuntarZ: get(b, 'f34', 0), apuntarY: get(b, 'f35', 0),
       apuntarSuelo: verdad(get(b, 'f51')),
       seguimiento: get(b, 'f37', 0),
+      hp: get(b, 'f12', 0),
+      teledireccion: { giro: get(b, 'f22', 0), tolerancia: get(b, 'f23', 0), radio: get(b, 'f24', 0), tiempo: get(b, 'f25', 0) / 1000 },
       artFacing: get(b, 'f55', 2) === 1 ? -1 : 1, sinImpactoAppear: verdad(get(b, 'f56')),
       offset: ['f58', 'f59', 'f60'].map((k) => get(b, k, 0)),
     },
