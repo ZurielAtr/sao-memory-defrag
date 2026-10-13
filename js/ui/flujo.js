@@ -30,6 +30,7 @@ import { montarAjustes } from '../audio/ajustes.js';
 import { crearPantallaHabilidades } from './habilidades.js';
 import { sumarStatsArbol } from '../habilidades.js';
 import { clavesDisponibles, estadoMision, estadoCapitulo } from './disponibilidad_misiones.js';
+import {DESTINOS_FOOTER,DESTINOS_TOWN,PENDIENTES_MENU,crearMenuPrincipal,crearAvisoPrincipal,objetivosMenu} from './menus_principales.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -64,6 +65,10 @@ const estado = {
   indice: [], // web/data/misiones/index.json
   indicePorId: new Map(),
   errores: 0,
+  volverEquipo: null,
+  aperturaPrincipal: 0,
+  foco: null,
+  teclado: false,
 };
 window.__interfaz = estado;
 
@@ -138,10 +143,11 @@ async function fondo(ruta) {
   return { img: await imagen(ruta) };
 }
 
-function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null, largas = {} } = {}) {
-  Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas });
+function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null, largas = {},teclado=['home','town','taberna','upgrade','multi','aviso-principal'].includes(nombre) } = {}) {
+  Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas,teclado,foco:null });
+  canvas.tabIndex=0;canvas.setAttribute('aria-label',`SAO MD · ${nombre}`);
   audio.escena(nombre);
-  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : nombre === 'home' ? 'home' : ['equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
+  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : ['home','town','taberna','multi'].includes(nombre) ? 'home' : ['upgrade','equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
   document.title = `SAO MD · ${nombre}`;
 }
 
@@ -174,6 +180,8 @@ function dibujar(t) {
       }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const foco=estado.foco&&objetivosMenu(estado.capas,estado.acciones).find(z=>z.n.nombre===estado.foco);
+    if(foco){ctx.save();ctx.setTransform(...foco.m);ctx.strokeStyle='#82d4e7';ctx.lineWidth=4/b[0];ctx.strokeRect(0,0,foco.w,foco.h);ctx.restore();}
   } catch (e) {
     if (estado.errores++ < 3) console.error('interfaz: error al dibujar', e);
   }
@@ -196,6 +204,7 @@ const punto = (ev) => {
   return [(ev.clientX - r.left) * devicePixelRatio, (ev.clientY - r.top) * devicePixelRatio];
 };
 canvas.addEventListener('pointerdown', (ev) => {
+  estado.foco=null;canvas.focus({preventScroll:true});
   const [x, y] = punto(ev);
   const n = nodoBajo(x, y, (z) => z.nombre in estado.acciones || z.nombre in estado.largas);
   const lista = nodoBajo(x, y, (z) => z.interior);
@@ -242,7 +251,18 @@ canvas.addEventListener('wheel', (ev) => {
   desplazarLista(lista, lista.interior?.direccion === 2 || ev.shiftKey ? ev.deltaY : ev.deltaX, ev.shiftKey ? 0 : ev.deltaY);
 }, { passive: false });
 addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape') (estado.acciones.button_next_cerrar ?? estado.acciones.button_footer_return)?.();
+  if(ev.ctrlKey||ev.metaKey||ev.altKey||ev.target.closest?.('[data-audio-ui]'))return;
+  if(![canvas,document.body,document.documentElement].includes(ev.target))return;
+  if (ev.key === 'Escape') {ev.preventDefault();(estado.acciones.button_next_cerrar ?? estado.acciones.button_footer_return ?? estado.acciones.button_close)?.();return;}
+  if(estado.pantalla==='titulo'&&['Enter',' '].includes(ev.key)){ev.preventDefault();estado.alTocarFondo?.();return;}
+  if(!estado.teclado)return;
+  const objetivos=objetivosMenu(estado.capas,estado.acciones);
+  if(['Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)&&objetivos.length){
+    ev.preventDefault();canvas.focus({preventScroll:true});
+    const atras=ev.shiftKey||['ArrowLeft','ArrowUp'].includes(ev.key),i=objetivos.findIndex(z=>z.n.nombre===estado.foco);
+    estado.foco=objetivos[i<0?(atras?objetivos.length-1:0):(i+(atras?-1:1)+objetivos.length)%objetivos.length].n.nombre;
+  }else if(['Enter',' '].includes(ev.key)&&estado.foco){ev.preventDefault();const n=objetivos.find(z=>z.n.nombre===estado.foco)?.n;if(n)estado.acciones[n.nombre]?.(n);}
+  else if(['PageUp','PageDown'].includes(ev.key)){const lista=estado.capas.flatMap(c=>c.pantalla?.zonas??[]).find(z=>z.n.interior)?.n;if(lista){ev.preventDefault();desplazarLista(lista,0,ev.key==='PageUp'?-500:500);}}
 });
 
 // Pie común (PROVISIONAL: en el .csb el botón de volver está en x = 0 con ancla 1, fuera de pantalla;
@@ -256,6 +276,7 @@ async function pie({ menu = false, volver = true } = {}) {
   if (!menu) for (const n of ['footermenu_left', 'buttons']) p.mostrar(n, false);
   p.mostrar('button_footer_return', volver);
   p.buscar('button_footer_return').x = 173;
+  p.texto('text_current_room_title','Partida local');p.mostrar('text_current_room',false);
   return p;
 }
 
@@ -272,6 +293,7 @@ async function titulo() {
 }
 
 async function home() {
+  estado.aperturaPrincipal++;estado.volverEquipo=null;
   const c = personajeActual();
   const ficha = c ? await fichaPersonaje(c.character_id) : null;
   const [bg, barra, p] = await Promise.all([fondo(FONDO_HOME), Pantalla.cargar('ui/common/common_home_user_status_s.csb'), pie({ menu: true, volver: false })]);
@@ -285,12 +307,59 @@ async function home() {
   if (ficha) barra.raiz.hijos.unshift(ilustracion('home_leader', ficha.retrato, 375, 1180, 1000));
   await barra.precargar();
   escena('home', [bg, { pantalla: barra }, { pantalla: p }], {
-    button_home_quest: () => mundo(),
-    button_home_party: () => equipo(null),
+    ...accionesHome(),
   });
 }
 
+function accionesHome(){
+  return {button_home_quest:()=>mundo(),button_home_party:()=>equipo(null,null),
+    ...Object.fromEntries(Object.entries(DESTINOS_FOOTER).map(([boton,nombre])=>[boton,()=>menuPrincipal(nombre)]))};
+}
+
+async function avisoPrincipal(titulo,mensaje){
+  estado.aperturaPrincipal++;
+  const anterior={pantalla:estado.pantalla,capas:estado.capas,acciones:estado.acciones,cada:estado.cada,foco:estado.foco,teclado:estado.teclado};
+  const p=await crearAvisoPrincipal(titulo,mensaje);
+  const volver=()=>{escena(anterior.pantalla,anterior.capas,anterior.acciones,{cada:anterior.cada,teclado:anterior.teclado});estado.foco=anterior.foco;};
+  escena('aviso-principal',[...anterior.capas,{velo:'rgba(0,0,0,.8)'},{pantalla:p}],{button_close:volver,button_footer_return:volver});
+}
+
+async function menuPrincipal(nombre,categoria='all'){
+  const ticket=++estado.aperturaPrincipal;
+  await cargarCuenta();
+  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria}),pie()]);
+  if(ticket!==estado.aperturaPrincipal)return;
+  // Multi/Herrería ya ocupan la zona baja; volver se mantiene fuera de sus botones.
+  if(nombre==='multi')Object.assign(vuelta.buscar('button_footer_return'),{x:104,y:55,escalaX:.6,escalaY:.6});
+  if(nombre==='upgrade')vuelta.buscar('button_footer_return').y=1160;
+  const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria));
+  const pendiente=k=>()=>avisoPrincipal(...PENDIENTES_MENU[k]);
+  const acciones={button_footer_return:()=>home()};
+  if(nombre==='town')for(const [id,,destino]of DESTINOS_TOWN){
+    acciones['town_'+id]=destino==='misiones'?()=>mundo():destino==='equipo'?abrirEquipo:destino?()=>menuPrincipal(destino):pendiente(id);
+  }
+  if(nombre==='taberna'){
+    for(const k of ['all','chara','weapon'])acciones['button_category_'+k]=()=>menuPrincipal('taberna',k);
+    acciones.consultar_taberna=categoria==='chara'?()=>listaPersonajes(null,0,{volver:()=>menuPrincipal(nombre,categoria),seleccionar:false}):abrirEquipo;
+  }
+  if(nombre==='upgrade'){
+    for(const k of ['button_progress','button_forge','button_sell','button_exchange'])acciones[k]=pendiente(k);
+    acciones.button_party_organization=abrirEquipo;
+    acciones.button_equipment_list=()=>{estado.volverEquipo=()=>menuPrincipal(nombre);return listaEquipo(null,0);};
+    const abrirHabilidad=modo=>{estado.volverEquipo=()=>menuPrincipal(nombre);return habilidades(null,0,modo);};
+    acciones.upgrade_arbol=()=>abrirHabilidad('arbol');acciones.upgrade_ranuras=()=>abrirHabilidad('ranuras');
+  }
+  if(nombre==='multi'){
+    acciones.button_party_edit=abrirEquipo;acciones.multi_solo=()=>mundo();
+    for(const k of ['button_party_search','button_friend_search','button_numbersearch','button_matching'])acciones[k]=pendiente(k);
+  }
+  const bg=await fondo(nombre==='town'?FONDO_HOME:FONDO_MENU);
+  if(ticket!==estado.aperturaPrincipal)return;
+  escena(nombre,[bg,{pantalla:p},{pantalla:vuelta}],acciones);
+}
+
 async function mundo() {
+  estado.aperturaPrincipal++;
   await cargarDatos();
   const p = await Pantalla.cargar('ui/quest/quest_world_select.csb');
   const [bg, vuelta] = await Promise.all([fondo(FONDO_MUNDO(estado.mundo)), pie()]);
@@ -429,8 +498,7 @@ async function lista(capitulo = estado.capitulo) {
   escena('lista', capas, {
     quest_select_button: (n) => consultaMision(n._mision).iniciar ? preparacion(n._mision) : detalle(n._mision, capas),
     button_footer_return: () => (capitulo == null ? mundo() : capitulos()),
-    button_home_quest: () => mundo(),
-    button_home_party: () => equipo(null),
+    ...accionesHome(),
   }, { largas: { quest_select_button: (n) => detalle(n._mision, capas) } });
 }
 
@@ -557,7 +625,8 @@ async function preparacion(m) {
 
 // Equipo (party_select_s): 3 huecos con party_select_character_widget_s; el 1.º es el personaje elegido y el 2.º
 // y el 3.º los del Switch (tocar un hueco abre la lista para ese puesto).
-async function equipo(m) {
+async function equipo(m,volver=estado.volverEquipo) {
+  estado.aperturaPrincipal++;estado.volverEquipo=m?null:volver;
   const [p, widget, vuelta] = await Promise.all([Pantalla.cargar('ui/party/party_select_s.csb'),
     Pantalla.cargar('ui/party/party_select_character_widget_s.csb'), pie()]);
   for (const nombre of ['button_auto_edit', 'button_character_list_1', 'button_character_item_1', 'button_character_item',
@@ -619,7 +688,7 @@ async function equipo(m) {
     arma_0: () => listaArmas(m, 0), arma_1: () => listaArmas(m, 1), arma_2: () => listaArmas(m, 2),
     habilidades_0: () => habilidades(m, 0), habilidades_1: () => habilidades(m, 1), habilidades_2: () => habilidades(m, 2),
     ranuras_0: () => habilidades(m, 0, 'ranuras'), ranuras_1: () => habilidades(m, 1, 'ranuras'), ranuras_2: () => habilidades(m, 2, 'ranuras'),
-    button_footer_return: () => (m ? preparacion(m) : home()),
+    button_footer_return: () => (m ? preparacion(m) : estado.volverEquipo ? estado.volverEquipo() : home()),
   });
 }
 
@@ -631,6 +700,7 @@ const opcionesEquipo = {
 const listaArmas = (m, k = 0) => listaEquipo(m, k, 'weapon');
 
 async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegido = null, mensaje = '') {
+  estado.aperturaPrincipal++;
   await cargarCuenta();
   const c = miembroEn(k); if (!c) return equipo(m);
   const catalogo = master(), pj = catalogo.personaje(c.character_id);
@@ -657,6 +727,7 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
 
 // D77: lista y botones originales; asignaciones/acciones son del backend local.
 async function listaEquipo(m, k = 0, ranura = 'weapon', mensaje = '') {
+  estado.aperturaPrincipal++;
   await cargarCuenta();
   const c = miembroEn(k); if (!c) return equipo(m);
   const [bg, p] = await Promise.all([fondo(FONDO_MENU), Pantalla.cargar('ui/equip/equip_list_s.csb')]);
@@ -717,14 +788,15 @@ async function listaEquipo(m, k = 0, ranura = 'weapon', mensaje = '') {
 
 // Personajes de la cuenta (character_list_s): miniaturas; tocar una la pone en el puesto `k` del equipo (en los
 // puestos 2 y 3, tocar la que ya está lo deja vacío).
-async function listaPersonajes(m, k = 0) {
+async function listaPersonajes(m, k = 0,{volver=null,seleccionar=true}={}) {
+  estado.aperturaPrincipal++;
   const [bg, p] = await Promise.all([fondo(FONDO_MENU), Pantalla.cargar('ui/party/character_list_s.csb')]);
   p.mostrar('button_sort_0', false);
   p.texto('possession_character_number', personajes().length);
   const sv = p.buscar('background_character_list');
   const lado = 170, por = 4;
   const items = personajes().map((c, i) => ({
-    ...nodoImagen(`personaje_${i}`, MINIATURA(c.character_id), 0, 0, lado, lado), tactil: true, _indice: i,
+    ...nodoImagen(`personaje_${i}`, MINIATURA(c.character_id), 0, 0, lado, lado), tactil: seleccionar, _indice: i,
     hijos: [nodoTexto('texto_nivel', `Lv ${c.level}`, lado / 2, 16, 26)],
   }));
   // Rejilla de 4 por fila, de arriba abajo.
@@ -734,8 +806,8 @@ async function listaPersonajes(m, k = 0) {
   sv.hijos = items;
   sv.interior = { ancho: sv.ancho, alto, direccion: 1 };
   await p.precargar(sv);
-  const acciones = { button_close: () => equipo(m) };
-  items.forEach((it) => {
+  const acciones = { button_close: volver??(()=>equipo(m)) };
+  if(seleccionar)items.forEach((it) => {
     acciones[it.nombre] = () => {
       const i = it._indice;
       if (k === 0) estado.personaje = i;
@@ -745,7 +817,7 @@ async function listaPersonajes(m, k = 0) {
       equipo(m);
     };
   });
-  escena('personajes', [bg, { pantalla: p }], acciones);
+  escena('personajes', [bg, { pantalla: p }], acciones,{teclado:!seleccionar});
 }
 
 function jugar(mision, ids = []) {

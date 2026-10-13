@@ -43,7 +43,9 @@ During dialogue, Space/Enter/Z complete the text or advance. Log/L opens the
 scrollable dialogue log and lets you replay available voices. Back/Escape closes
 the log. When skipping is allowed, Skip/Escape shows the story summary or a
 confirmation: Keep reading returns to the dialogue; Skip/Enter ends it.
-If skipping is unavailable, Escape shows a notice. Some effects are still pending.
+If skipping is unavailable, Escape shows a notice. Shakes, background gamma, and
+animated opening/closing of these menus are included; they respect your system's
+reduced-motion preference. Other effects and transitions still need fidelity work.
 
 ## What this repository contains
 
@@ -52,6 +54,16 @@ HTML and JavaScript for the port, the importer, and the simulated local server t
 The site is published with GitHub Pages from `main`. To try the code locally, serve this folder with a local HTTP server (for example, `python -m http.server 8000`) and open `http://localhost:8000/`. Opening the HTML directly with `file://` does not support importing.
 
 ## Status
+
+From Home, **Town** opens the town shortcuts, **Scout** the Tavern, **Upgrade** the
+Blacksmith, and **Multi** the co-op menu. Tab/arrow keys cycle their buttons;
+Enter/Space selects and Escape goes back. The Tavern lets you browse your own
+collection and manage equipment. Upgrade links to inventory, Team, Tree and Slots.
+
+Scouting and strengthening/evolving/selling/exchanging equipment are still pending.
+Multi lets you prepare your local team and open solo quests; searching rooms,
+friends or parties requires a server that has not been implemented yet. Town
+currently provides local shortcuts; the animated town is still pending.
 
 Includes local importing, quests, combat, UI, dialogue, music, sound effects, and voices. Combat, UI, and audio fidelity still need work; some quests or assets may not work yet. Multiplayer is not implemented.
 

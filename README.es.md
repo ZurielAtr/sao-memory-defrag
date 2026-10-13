@@ -54,7 +54,9 @@ En los diálogos, Espacio/Intro/Z completan el texto o avanzan; Log/L abre el
 registro con desplazamiento y repetición de las voces disponibles. Volver/Escape
 cierra el registro. Cuando la historia permite saltar, Skip/Escape muestra su
 resumen o una confirmación: Seguir leyendo regresa y Saltar/Intro termina.
-Si no permite saltar, Escape muestra un aviso. Algunos efectos siguen pendientes.
+Si no permite saltar, Escape muestra un aviso. Se incluyen sacudidas, gamma del
+fondo y apertura/cierre animados de estos menús; respetan la preferencia de
+movimiento reducido del sistema. La fidelidad de otros efectos y transiciones sigue pendiente.
 
 ## Qué contiene este repositorio
 
@@ -63,6 +65,16 @@ HTML y JavaScript del port, del importador y del servidor local simulado que se 
 La página se publica con GitHub Pages desde `main`. Para probar el código en tu equipo, sirve esta carpeta con un servidor HTTP local (por ejemplo, `python -m http.server 8000`) y abre `http://localhost:8000/`. Abrir el HTML directamente con `file://` no permite la importación.
 
 ## Estado
+
+Desde Home, **Town** abre los accesos de la ciudad, **Scout** la Taberna, **Upgrade**
+la Herrería y **Multi** el menú de cooperación. Tab/las flechas recorren sus botones;
+Intro/Espacio seleccionan y Escape vuelve. En Taberna puedes consultar tu colección
+y gestionar el equipo. Upgrade enlaza inventario, Equipo, Árbol y Ranuras.
+
+Los sorteos y las operaciones de fortalecer/evolucionar/vender/intercambiar todavía
+están pendientes. Multi permite preparar el equipo local y entrar a misiones en
+solitario; buscar salas, amigos o grupos requiere un servidor que aún no está
+implementado. Town ofrece accesos locales; la ciudad animada sigue pendiente.
 
 Incluye importación local, misiones, combate, interfaz, diálogos, música, efectos y voces. Quedan pendientes detalles de fidelidad en combate, interfaz y audio; algunas misiones o recursos pueden no funcionar todavía. El multijugador no está implementado.
 

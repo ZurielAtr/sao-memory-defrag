@@ -10,6 +10,7 @@ import { rutaWeb } from '../rutas.js';
 
 import { leerCSB, recorrer } from './csb.js';
 import { textura, fuenteBitmap, fuenteTTF, pilaFuentes } from './recursos.js';
+import { imagenGamma } from './historia_gamma.js';
 
 export const DISENO = { ancho: 750, alto: 1334 }; // tamaño de diseño de las pantallas (raíz de los .csb)
 
@@ -226,7 +227,8 @@ export class Pantalla {
       ctx.clip();
     }
     const recortesHijos = recorta ? [...recortes, { m, w, h }] : recortes;
-    for (const hijo of hijos) this.dibujarNodo(ctx, hijo, mh, alfa, recortesHijos);
+    const alfaHijos=n.cascadaAlpha===false?alfaPadre:alfa;
+    for (const hijo of hijos) this.dibujarNodo(ctx, hijo, mh, alfaHijos, recortesHijos);
     if (recorta) ctx.restore();
   }
 
@@ -235,7 +237,7 @@ export class Pantalla {
     if (!img || w <= 0 || h <= 0) return;
     const fx = n.flipX ? -1 : 1, fy = n.flipY ? -1 : 1;
     ctx.setTransform(...mul(m, [fx, 0, 0, -fy, fx < 0 ? w : 0, fy < 0 ? 0 : h]));
-    const t = teñida(img, n.color);
+    const t = imagenGamma(teñida(img, n.color), n.gamma ?? 1);
     if (n.scale9) this.nueve(ctx, t, w, h, n.scale9.insets);
     else if (n.cubrir) {
       // Llena el hueco sin deformar: recorta el centro de la imagen a la proporción del nodo (no es de cocos;

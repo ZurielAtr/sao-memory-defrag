@@ -11,11 +11,12 @@ import { rutaWeb } from '../rutas.js';
 // PROVISIONAL (sin leer en el binario): huecos 1 izquierda, 2 derecha, 3 centro y 4 sin imagen (sin f8, el 1);
 // los personajes siguen en pantalla hasta que otro ocupa su hueco o cambia el fondo; el que no habla se
 // oscurece; la ilustración va en el sitio del objeto; el texto sale a VELOCIDAD caracteres/s.
-// Audio: D69. Registro/fades: D81; SpriteStudio, resumen y permisos: D82. Elecciones y otros efectos pendientes.
+// Audio D69; registro/fades D81; SS/resumen D82; shake/gamma y popups D83. Elecciones pendientes.
 
-import { Pantalla, baseCanvas, desplazarLista } from './pantalla.js';
+import { Pantalla, baseCanvas, desplazarLista, mul, trasladar } from './pantalla.js';
 import {crearRegistro,crearSalto,crearResumen,registroVisible} from './historia_menus.js';
 import {EfectosHistoria} from './historia_efectos.js';
+import {TransicionDialogo} from './historia_transiciones.js';
 import { audio, motor } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
 
@@ -69,6 +70,7 @@ export class Historia {
     this.p.mostrar('button_log', true);
     this.p.mostrar('button_skip',datos.permitirSalto!==false);
     this.fondo = p.buscar('background');
+    this.fondo._x0=this.fondo.x;this.fondo._y0=this.fondo.y;
     this.objeto = p.buscar('item');
     for (const n of Object.values(HUECOS)) p.buscar(n).imagen = null;
     this.fondo.imagen = null;
@@ -101,13 +103,15 @@ export class Historia {
       if (e.fondo) {
         this.fondo.imagen = imagen(`images/story/background/${e.fondo}.jpg`);
         this.huecos = {}; // PROVISIONAL: el fondo nuevo empieza sin personajes
+        this.efectos.movimientos.clear(); // No dejar RepeatForever asociado a un retrato retirado.
       }
       if (e.still) still = e.still;
       if (e.objeto) objeto = e.objeto;
       const hueco = HUECOS[e.posicion ?? 1] ? (e.posicion ?? 1) : null;
       if (e.personaje && hueco) {
         // Un personaje (carpeta) está en un solo hueco.
-        for (const [k, h] of Object.entries(this.huecos)) if (h.personaje.carpeta === e.personaje.carpeta) delete this.huecos[k];
+        for (const [k, h] of Object.entries(this.huecos)) if (h.personaje.carpeta === e.personaje.carpeta&&Number(k)!==hueco){delete this.huecos[k];this.efectos.mover(Number(k),0);}
+        if(this.huecos[hueco]?.personaje.carpeta!==e.personaje.carpeta)this.efectos.mover(hueco,0);
         this.huecos[hueco] = { personaje: e.personaje, nombre: e.nombre };
       }
       if (e.texto != null) habla = { ...e, hueco };
@@ -131,7 +135,8 @@ export class Historia {
       const n = this.p.buscar(nombre);
       const h = this.huecos[k];
       n._y0 ??= n.y;
-      if (!h?.personaje?.cuerpo) { n.imagen = null; n.hijos = []; continue; }
+      n._x0 ??= n.x;
+      if (!h?.personaje?.cuerpo) { n.imagen = null; n.hijos = [];this.efectos.mover(Number(k),0);continue; }
       const pj = h.personaje;
       const base = `images/story/character/${pj.carpeta}`;
       const pos = this.posiciones[pj.carpeta] ?? { ancho: 456, capas: {} };
@@ -174,21 +179,35 @@ export class Historia {
 
   saltar() {
     this.terminada = true;
-    this.cerrarRegistro();
+    this.cerrarRegistro(true);
     this.efectos?.cancelar();
+    if(this.fondo){this.fondo.gamma=1;this.aplicarDesplazamientos();}
     this.cancelarSonidoLinea();
     this._fin?.(); // termina ya (sin esperar al siguiente cuadro, que no llega con la pestaña oculta)
   }
 
   actualizar(dt) {
-    if(this.modal)return;
-    this.efectos?.actualizar(dt);
-    for(const [k,nombre] of Object.entries(HUECOS)){
-      const n=this.p.buscar(nombre);if(n?._y0!=null)n.y=n._y0+(this.huecos[k]?.personaje.dy??0)+(this.efectos?.desplazamiento(Number(k))??0);
+    if(this.modal){
+      this.modal.transicion?.actualizar(dt);
+      if(this.modal.transicion?.cerrada)this.cerrarRegistro(true);
+      return;
     }
+    this.efectos?.actualizar(dt);
+    this.aplicarDesplazamientos();
     if (!this._preparando&&!this.efectos?.ocupado && this.escribiendo) this.mostrado = Math.min(this.texto.length, this.mostrado + VELOCIDAD * dt);
     this.p.texto('text_talk', this.texto.slice(0, Math.floor(this.mostrado)));
     this.p.mostrar('icon_next', !this.escribiendo&&!this._preparando&&!this.efectos?.ocupado&&!this._avanzando);
+  }
+
+  aplicarDesplazamientos(){
+    // Shake12 afecta al padre del CSB completo; no cambia la posición del sprite background.
+    this.fondo.x=this.fondo._x0;this.fondo.y=this.fondo._y0;
+    for(const [k,nombre] of Object.entries(HUECOS)){
+      const n=this.p.buscar(nombre);if(n?._y0!=null){
+        n.y=n._y0+(this.huecos[k]?.personaje.dy??0)+(this.efectos?.desplazamiento(Number(k))??0);
+        n.x=n._x0+(this.efectos?.desplazamientoX(Number(k))??0);
+      }
+    }
   }
 
   dibujar(ctx) {
@@ -197,16 +216,28 @@ export class Historia {
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, c.width, c.height);
-    this.p.dibujar(ctx, baseCanvas(c));
-    this.efectos?.dibujar(ctx);
+    this.fondo.gamma=this.efectos?.gammaFondo??1;
+    const [dx,dy]=this.efectos?.desplazamientoFondo()??[0,0],base=baseCanvas(c);
+    if(dx||dy){
+      // El padre ClippingNode incluye el CSB, fades y SS. Componer primero evita desplazar dos veces el fondo copiado por SS.
+      this.canvasEscena??=document.createElement('canvas');const escena=this.canvasEscena;
+      if(escena.width!==c.width||escena.height!==c.height){escena.width=c.width;escena.height=c.height;}
+      const x=escena.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);
+      this.p.dibujar(x,base);this.efectos?.dibujar(x);
+      const traslado=trasladar(dx*base[0],dy*base[3]);
+      ctx.setTransform(...traslado);ctx.globalAlpha=1;ctx.drawImage(escena,0,0);
+      // Mantener hit testing y recortes en las mismas coordenadas que los botones desplazados.
+      this.p.zonas=this.p.zonas.map(z=>({...z,m:mul(traslado,z.m),recortes:z.recortes?.map(r=>({...r,m:mul(traslado,r.m)}))}));
+    }else{this.p.dibujar(ctx,base);this.efectos?.dibujar(ctx);}
     if(this.modal){
-      ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='rgba(0,0,0,.9)';ctx.fillRect(0,0,c.width,c.height);
+      ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.fillStyle=`rgba(0,0,0,${this.modal.transicion?.oscurecedor??205/255})`;ctx.fillRect(0,0,c.width,c.height);
       this.modal.pantalla?.dibujar(ctx,baseCanvas(c));
     }
   }
 
   /** Botón de la pantalla bajo (x, y) del canvas (px), o null. */
   botonEn(x, y) {
+    if(this.modal?.transicion&&!this.modal.transicion.interactiva)return null;
     const p=this.modal?.pantalla??this.p;
     return p.nodoEn(x,y,n=>['button_skip','button_log','button_close','button_ok','text_confirm'].includes(n.nombre)||n.nombre.startsWith('registro_voz_'))?.nombre??null;
   }
@@ -216,11 +247,14 @@ export class Historia {
     const modal=this.modal={tipo:'registro',pantalla:null};this.cancelarSonidoLinea();
     try{
       const p=await crearRegistro(registroVisible(this.registro,this._preparando?this.i-1:this.i,this._preparando?Infinity:this.mostrado));
-      if(!this.terminada&&this.modal===modal)modal.pantalla=p;
+      if(!this.terminada&&this.modal===modal){modal.pantalla=p;modal.transicion=new TransicionDialogo(p);}
     }catch(err){if(this.modal===modal)this.modal=null;console.warn('registro: no se pudo abrir',err);}
   }
 
-  cerrarRegistro(){
+  cerrarRegistro(inmediato=false){
+    if(!inmediato&&this.modal?.transicion&&!this.modal.transicion.cerrada){
+      this.vozRegistro?.abort();audio.detenerVoz('registro-historia');this.arrastreRegistro=null;this.modal.transicion.cerrar();return;
+    }
     this.vozRegistro?.abort();audio.detenerVoz('registro-historia');this.modal=null;this.arrastreRegistro=null;
     if(this._siguientePendiente){this._siguientePendiente=false;if(!this.terminada)this.siguiente();}
   }
@@ -231,7 +265,7 @@ export class Historia {
     const tipo=!permitido?'aviso':this.datos.resumen?'resumen':'salto';
     const modal=this.modal={tipo,pantalla:null};
     if(!this._avanzando)this.cancelarSonidoLinea();
-    try{const p=await (tipo==='resumen'?crearResumen(this.datos):crearSalto({permitido}));if(!this.terminada&&this.modal===modal)modal.pantalla=p;}
+    try{const p=await (tipo==='resumen'?crearResumen(this.datos):crearSalto({permitido}));if(!this.terminada&&this.modal===modal){modal.pantalla=p;modal.transicion=new TransicionDialogo(p);}}
     catch(err){if(this.modal===modal)this.modal=null;console.warn('historia: no se pudo abrir confirmación',err);}
   }
 
@@ -262,6 +296,7 @@ export class Historia {
         const x = ((ev.clientX - r.left) * canvas.width) / r.width, y = ((ev.clientY - r.top) * canvas.height) / r.height;
         const boton=this.botonEn(x,y);
         if(this.modal){
+          if(this.modal.transicion&&!this.modal.transicion.interactiva){ev.stopImmediatePropagation();return;}
           const lista=this.listaModal();
           if(lista&&this.modal.pantalla.nodoEn(x,y,n=>n===lista)) this.arrastreRegistro={x,y,boton,desde:lista._desplaz??0,movido:false};
           else if(boton==='button_close')this.cerrarRegistro();
@@ -275,6 +310,7 @@ export class Historia {
         if (ev.target.closest?.('[data-audio-ui]')) return;
         if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
         if(this.modal){
+          if(this.modal.transicion&&!this.modal.transicion.interactiva&&ev.code!=='Escape'){ev.preventDefault();ev.stopImmediatePropagation();return;}
           if(ev.code==='Escape')this.cerrarRegistro();
           else if(['Enter','NumpadEnter'].includes(ev.code)){
             if(['salto','resumen'].includes(this.modal.tipo))this.saltar();else if(this.modal.tipo==='aviso')this.cerrarRegistro();else return;
@@ -302,7 +338,7 @@ export class Historia {
       const soltar=(ev)=>{const t=this.arrastreRegistro;this.arrastreRegistro=null;if(t&&!t.movido){if(t.boton?.startsWith('registro_voz_'))this.repetirVoz(t.boton);else if(t.boton==='text_confirm'&&this.modal?.tipo==='resumen')this.saltar();}if(this.modal||t)ev.stopImmediatePropagation();};
       const cancelar=(ev)=>{this.arrastreRegistro=null;if(this.modal)ev.stopImmediatePropagation();};
       const rueda=(ev)=>{
-        if(!this.modal)return;const n=this.listaModal();if(n)desplazarLista(n,0,ev.deltaY);
+        if(!this.modal)return;const n=this.modal.transicion&&!this.modal.transicion.interactiva?null:this.listaModal();if(n)desplazarLista(n,0,ev.deltaY);
         ev.preventDefault();ev.stopImmediatePropagation();
       };
       addEventListener('pointermove',mover,true);addEventListener('pointerup',soltar,true);addEventListener('wheel',rueda,{capture:true,passive:false});
