@@ -15,10 +15,10 @@ La APK se procesa en tu equipo y **no se envía al servidor**. Los recursos impo
 
 Se recomienda ordenador con teclado. Los controles táctiles están pendientes y no se ha validado el funcionamiento en Safari/iPhone/iPad.
 
-En **Equipo → Arma** puedes equipar o retirar las armas compatibles que tengas en tu inventario.
-La elección se guarda en la partida y sus estadísticas se aplican en combate. Si la lista está
-vacía, primero necesitas obtener equipo en las misiones. Armaduras, accesorios y mejoras siguen
-pendientes; el desbloqueo de pasivas por nivel todavía está en desarrollo.
+En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**, **Armadura** o
+**Accesorio**. Puedes equipar o retirar piezas compatibles de tu inventario. La elección se guarda
+en la partida y sus estadísticas y pasivas se aplican en combate. Si la lista está vacía, primero
+necesitas obtener equipo en las misiones. Las mejoras y evoluciones siguen pendientes.
 
 ## Controles de combate
 

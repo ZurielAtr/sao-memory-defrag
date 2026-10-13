@@ -12,9 +12,9 @@
 // es PROVISIONAL: diseño propio para que el juego funcione, no el formato original.
 
 import { MemoryStore } from './store.js';
-import { armaCompatible } from '../equipo.js';
+import { equipoCompatible, RANURAS_EQUIPO } from '../equipo.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // Migraciones del estado guardado: MIGRACIONES[n] convierte un estado de versión n a n + 1.
 // Al cambiar el formato del estado se sube SCHEMA_VERSION y se agrega aquí la conversión.
@@ -22,6 +22,10 @@ const MIGRACIONES = {
   1: (estado) => {
     for (const c of estado.characters) c.weapon_uid ??= null;
     for (const e of estado.equipment) e.level ??= 1;
+    return estado;
+  },
+  2: (estado) => {
+    for (const c of estado.characters) { c.armor_uid ??= null; c.accessory_uid ??= null; }
     return estado;
   },
 };
@@ -156,7 +160,8 @@ export class LocalBackend {
   nuevoPersonaje(estado, characterId) {
     const m = this.master.personaje(characterId);
     if (!m) fail('personaje_inexistente', `personaje ${characterId} no está en la master data`);
-    const p = { uid: estado.siguienteUid++, character_id: characterId, level: 1, exp: 0, weapon_uid: null, created_at: this.now() };
+    const p = { uid: estado.siguienteUid++, character_id: characterId, level: 1, exp: 0,
+      weapon_uid: null, armor_uid: null, accessory_uid: null, created_at: this.now() };
     estado.characters.push(p);
     return p;
   }
@@ -244,26 +249,37 @@ function vistaInventario(estado) {
 // Cada ruta: { cuenta: requiere cuenta, fn(estado, params) -> { respuesta, nuevo? } }.
 // `nuevo` es el estado a guardar (se guarda entero al final: cada petición es atómica).
 
+function asignarEquipo(backend, estado, { character_uid, slot, equipment_uid }) {
+  if (!Object.hasOwn(RANURAS_EQUIPO, slot)) fail('ranura_invalida', 'ranura de equipo inválida');
+  if (!Number.isSafeInteger(character_uid) || character_uid <= 0) fail('personaje_invalido', 'personaje inválido');
+  const c = estado.characters.find((c) => c.uid === character_uid);
+  if (!c) fail('personaje_ajeno', 'el personaje no pertenece a la cuenta');
+  const arma = slot === 'weapon', prefijo = arma ? 'arma' : 'equipo';
+  if (equipment_uid !== null) {
+    if (!Number.isSafeInteger(equipment_uid) || equipment_uid <= 0) fail(arma ? 'arma_invalida' : 'equipo_invalido', 'equipo inválido');
+    const e = estado.equipment.find((e) => e.uid === equipment_uid);
+    if (!e) fail('equipo_ajeno', 'el equipo no pertenece a la cuenta');
+    if (!equipoCompatible(backend.master.personaje(c.character_id), backend.master.equipo(e.equipment_id), slot)) {
+      fail(`${prefijo}_incompatible`, 'ese equipo no es compatible con la ranura o el personaje');
+    }
+    const dueño = estado.characters.find((p) => Object.entries(RANURAS_EQUIPO)
+      .some(([r, f]) => p[f] === equipment_uid && (p.uid !== c.uid || r !== slot)));
+    if (dueño) fail(`${prefijo}_en_uso`, `el equipo está equipado por ${backend.master.personaje(dueño.character_id)?.nombre ?? 'otro personaje'}`);
+  }
+  c[RANURAS_EQUIPO[slot]] = equipment_uid;
+  return { respuesta: { data: { character: copy(c) } }, nuevo: estado };
+}
+
 const RUTAS = {
+  'character/equipment': {
+    cuenta: true,
+    fn(estado, params) { return asignarEquipo(this, estado, params); },
+  },
   // D76: contrato propio del servidor simulado; no afirma el formato del servidor original.
   'character/weapon': {
     cuenta: true,
     fn(estado, { character_uid, weapon_uid }) {
-      if (!Number.isSafeInteger(character_uid) || character_uid <= 0) fail('personaje_invalido', 'personaje inválido');
-      const c = estado.characters.find((c) => c.uid === character_uid);
-      if (!c) fail('personaje_ajeno', 'el personaje no pertenece a la cuenta');
-      if (weapon_uid !== null) {
-        if (!Number.isSafeInteger(weapon_uid) || weapon_uid <= 0) fail('arma_invalida', 'arma inválida');
-        const e = estado.equipment.find((e) => e.uid === weapon_uid);
-        if (!e) fail('equipo_ajeno', 'el arma no pertenece a la cuenta');
-        if (!armaCompatible(this.master.personaje(c.character_id), this.master.equipo(e.equipment_id))) {
-          fail('arma_incompatible', 'ese equipo no es un arma compatible con el personaje');
-        }
-        const dueño = estado.characters.find((p) => p.uid !== c.uid && p.weapon_uid === weapon_uid);
-        if (dueño) fail('arma_en_uso', `el arma está equipada por ${this.master.personaje(dueño.character_id)?.nombre ?? 'otro personaje'}`);
-      }
-      c.weapon_uid = weapon_uid;
-      return { respuesta: { data: { character: copy(c) } }, nuevo: estado };
+      return asignarEquipo(this, estado, { character_uid, slot: 'weapon', equipment_uid: weapon_uid });
     },
   },
   // Crear cuenta. Respuesta CONFIRMADA offline: cuerpo vacío. Error si ya existe: PROVISIONAL.

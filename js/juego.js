@@ -31,7 +31,7 @@ import { actualizarDefensa, resolverGolpe, recuperarMedidor } from './defensa.js
 import { pausaDeGolpe, pausar, enPausa, descontarPausa, PAUSA_PARADA } from './impacto.js';
 import { moverConVelocidad, orientar, GIRO_RAIZ } from './movimiento.js';
 import { Pasivas, cargarPasivas, TIPO } from './pasivas.js';
-import { sumarStatsArma, pasivasConArma } from './equipo.js';
+import { sumarStatsEquipo, pasivasConEquipo } from './equipo.js';
 import { aplicarBuff, esBuff, terminoBuff, buffsDe, pasarBuffs, TIPOS_PERSONAJE, TIPOS_ENEMIGO, STAT } from './buffs.js';
 import { iniciarMp, costeSkill, puedePagar, pagarSkill, ganarMpPorGolpe } from './mp.js';
 import { recibirGolpe, avanzarEstados, activar, activo, factorVelocidad, sinCuracion, parametro, estadosDe, ESTADO } from './estados.js';
@@ -1735,7 +1735,8 @@ async function cargarMiembro(id, i, combat) {
     reduccion: pj?.guardia ?? [0, 0],
   });
   ch.armaEquipada = forzado ? null : progreso.armaDe(id);
-  ch.stats = sumarStatsArma(characterStats(combat, id, progreso.nivelDe(id) ?? PLAYER_LEVEL), ch.armaEquipada);
+  ch.equiposAsignados = forzado ? [] : progreso.equiposDe(id);
+  ch.stats = sumarStatsEquipo(characterStats(combat, id, progreso.nivelDe(id) ?? PLAYER_LEVEL), ch.equiposAsignados);
   ch.velBase += (ch.stats.velocidad ?? 0) / 100;
   ch.normales = combat.personajes[id].normales;
   ch.z = PLAYER_Z;
@@ -1749,7 +1750,7 @@ async function cargarMiembro(id, i, combat) {
   ch.arma = pj?.arma ?? 0; // character.f3
   ch.lider = i === 0;
   // D60: pasivas del personaje (character.f36) y su efecto al empezar (HP máximo, medidor de guardia).
-  pasivas.registrar(ch, forzado ? [] : pasivasConArma(pj, ch.armaEquipada));
+  pasivas.registrar(ch, forzado ? [] : pasivasConEquipo(pj, ch.equiposAsignados));
   pasivas.aplicarAlEmpezar(ch);
   ch.mpPorGolpe = pj?.mpPorGolpe ?? 0; // D64: character.f46
   iniciarMp(ch, ch.stats.mp, pasivas); // D64: máximo con pasivas de tipo 2 y MP lleno

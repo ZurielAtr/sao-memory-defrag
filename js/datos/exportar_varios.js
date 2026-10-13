@@ -122,7 +122,7 @@ export async function exportarApi(fuente, salida) {
   const characters = {};
   const jobs = porId(await fuente.md('character_job'));
   for (const r of await fuente.md('character')) characters[r.f0] = { nombre: get(r, 'f2'), rareza: get(r, 'f1'), arma: get(r, 'f3'),
-    subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9') };
+    subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9'), genero: get(r, 'f10', 0) };
   const levels = ordenar(await fuente.md('character_level'), (r) => r.f0);
   const expLevel = levels.map((r) => get(r, 'f2', 0));
   const maxLevel = {};

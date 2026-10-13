@@ -12,7 +12,7 @@
 // formatos de user/all y quest/result son los provisionales del LocalBackend.
 
 import { crearApiLocal } from './api/index.js';
-import { armaDeCuenta } from './equipo.js';
+import { armaDeCuenta, equiposDeCuenta } from './equipo.js';
 
 const NOMBRE_INICIAL = 'Kirito';
 
@@ -76,6 +76,11 @@ export class Progreso {
   armaDe(id) {
     const c = this.miembros.find((c) => c && String(c.character_id) === String(id));
     return armaDeCuenta(this.cuenta, c, this.api?.backend?.master);
+  }
+
+  equiposDe(id) {
+    const c = this.miembros.find((c) => c && String(c.character_id) === String(id));
+    return equiposDeCuenta(this.cuenta, c, this.api?.backend?.master);
   }
 
   async empezar(misionId, dificultad) {

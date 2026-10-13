@@ -23,7 +23,7 @@ import { recorrer } from './csb.js';
 import { imagen, fuenteTTF } from './recursos.js';
 import { crearApiLocal } from '../api/index.js';
 import { characterStats } from '../combate.js';
-import { armaCompatible, armaDeCuenta, sumarStatsArma, statsArma } from '../equipo.js';
+import { RANURAS_EQUIPO, equipoCompatible, equipoDeCuenta, equiposDeCuenta, sumarStatsEquipo, statsEquipo } from '../equipo.js';
 import { tomarResultado } from './regreso.js';
 import { audio } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
@@ -549,9 +549,9 @@ async function equipo(m) {
     if (lleno) {
       const botonArma = widget.buscar('button_arms_edit', w);
       if (botonArma) { botonArma.visible = true; botonArma.nombre = `arma_${k}`; }
-      widget.texto('text_arms_edit', 'Arma', w);
-      const st = sumarStatsArma(characterStats({ personajes: { [c.character_id]: ficha } }, c.character_id, c.level),
-        armaDeCuenta(estado.cuenta, c, master()));
+      widget.texto('text_arms_edit', 'Equipo', w);
+      const st = sumarStatsEquipo(characterStats({ personajes: { [c.character_id]: ficha } }, c.character_id, c.level),
+        equiposDeCuenta(estado.cuenta, c, master()));
       widget.texto('text_character_name', nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, ''), w);
       widget.texto('level_number', c.level, w);
       widget.texto('hp_number', st.hp, w);
@@ -581,34 +581,52 @@ async function equipo(m) {
   });
 }
 
-// D76: recursos originales de lista; asignaciones/acciones son del backend local.
-async function listaArmas(m, k = 0, mensaje = '') {
+const opcionesEquipo = {
+  weapon: { nombre: 'Arma', plural: 'Armas', sin: 'Sin arma', stats: ['atk', 'crit'] },
+  armor: { nombre: 'Armadura', plural: 'Armaduras', sin: 'Sin armadura', stats: ['hp', 'def'] },
+  accessory: { nombre: 'Accesorio', plural: 'Accesorios', sin: 'Sin accesorio', stats: ['hp', 'mp', 'atk', 'def', 'crit'] },
+};
+const listaArmas = (m, k = 0) => listaEquipo(m, k, 'weapon');
+
+// D77: lista y botones originales; asignaciones/acciones son del backend local.
+async function listaEquipo(m, k = 0, ranura = 'weapon', mensaje = '') {
   await cargarCuenta();
   const c = miembroEn(k); if (!c) return equipo(m);
   const [bg, p] = await Promise.all([fondo(FONDO_MENU), Pantalla.cargar('ui/equip/equip_list_s.csb')]);
   for (const n of ['image_body_material', 'image_header_material', 'image_footer_material', 'layout_contents_material',
-    'image_note', 'button_sort', 'image_title']) p.mostrar(n, false);
-  p.texto('text_possession_equipment', 'Armas');
+    'image_note', 'button_sort', 'background_title']) p.mostrar(n, false);
+  const opcion = opcionesEquipo[ranura], campo = RANURAS_EQUIPO[ranura];
+  p.texto('text_possession_equipment', opcion.plural);
   const catalogo = master(), pj = catalogo.personaje(c.character_id);
-  const armas = estado.cuenta.equipment.filter((e) => armaCompatible(pj, catalogo.equipo(e.equipment_id)));
+  const armas = estado.cuenta.equipment.filter((e) => equipoCompatible(pj, catalogo.equipo(e.equipment_id), ranura));
   p.texto('possession_equipment_number', armas.length);
-  p.raiz.hijos.push(nodoTexto('titulo_armas', `Arma · ${nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, '')}`, 375, 1308, 32));
-  const equipada = armaDeCuenta(estado.cuenta, c, catalogo);
-  const aviso = mensaje || (armas.length ? `Equipada: ${equipada?.nombre ?? 'Sin arma'}` : 'No tienes armas compatibles. Obtén equipo en las misiones.');
+  p.raiz.hijos.push(nodoTexto('titulo_armas', `Equipo · ${nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, '')}`, 375, 1320, 30));
+  const equipada = equipoDeCuenta(estado.cuenta, c, catalogo, ranura);
+  const aviso = mensaje || (armas.length ? `Actual: ${equipada?.nombre ?? opcion.sin}` : `No tienes ${opcion.plural.toLowerCase()} compatibles. Obtén equipo en las misiones.`);
   p.raiz.hijos.push(nodoTexto('estado_armas', aviso, 375, 1190, 25,
     mensaje ? { r: 255, g: 180, b: 160 } : { r: 210, g: 225, b: 240 },
     { ancho: 710, alto: 70, tamPropio: true }));
   const sv = p.buscar('equipment_list'), filas = [{ uid: null }, ...armas];
   const alto = Math.max(sv.alto, filas.length * 116);
   const acciones = { button_close: () => equipo(m), button_footer_return: () => equipo(m) };
+  Object.entries(opcionesEquipo).forEach(([r, o], i) => {
+    const tab = clonar(p.buscar('button_sort'));
+    Object.assign(tab, { nombre: `categoria_${r}`, visible: true, tactil: true, x: 130 + 245 * i, y: 1261,
+      ancho: 230, alto: 60, anclaX: .5, anclaY: .5, escalaX: 1, escalaY: 1, zOrder: 10 });
+    tab.hijos = [nodoTexto(`texto_${r}`, o.nombre, 115, 30, 26,
+      r === ranura ? {r:110,g:230,b:255} : {r:245,g:245,b:250})];
+    p.raiz.hijos.push(tab); acciones[tab.nombre] = () => listaEquipo(m, k, r);
+  });
   let guardando = false;
   sv.hijos = filas.map((e, i) => {
     const f = e.uid == null ? null : catalogo.equipo(e.equipment_id);
-    const dueño = e.uid == null ? null : estado.cuenta.characters.find((x) => x.uid !== c.uid && x.weapon_uid === e.uid);
-    const actual = (c.weapon_uid ?? null) === e.uid;
-    const nombre = e.uid == null ? 'Sin arma' : f.nombre;
-    const st = f ? statsArma(f, e.level ?? 1) : null;
-    const detalle = e.uid == null ? 'Retirar el arma equipada' : `Lv ${e.level ?? 1} · R${f.rareza} · ATK ${st.atk ?? 0}${actual ? ' · Equipada' : dueño ? ' · En uso' : ''}`;
+    const dueño = e.uid == null ? null : estado.cuenta.characters.find((x) => Object.entries(RANURAS_EQUIPO)
+      .some(([r, campo]) => x[campo] === e.uid && (x.uid !== c.uid || r !== ranura)));
+    const actual = (c[campo] ?? null) === e.uid;
+    const nombre = e.uid == null ? opcion.sin : f.nombre;
+    const st = f ? statsEquipo(f, e.level ?? 1) : null;
+    const stats = st ? opcion.stats.filter((s) => st[s]).map((s) => `${s.toUpperCase()} ${st[s]}`).join(' · ') : '';
+    const detalle = e.uid == null ? 'Retirar esta pieza del equipo' : `Lv ${e.level ?? 1} · R${f.rareza} · ${stats || 'Sin estadísticas'}${actual ? ' · Equipado' : dueño ? ' · En uso' : ''}`;
     const n = { ...base, clase: 'Panel', nombre: `elegir_arma_${i}`, x: 10, y: alto - (i + 1) * 116,
       ancho: 700, alto: 108, anclaX: 0, anclaY: 0, tactil: !dueño,
       panel: { tipoColor: 1, color: actual ? { r: 35, g: 78, b: 98 } : { r: 25, g: 32, b: 45 }, opacidad: 235 },
@@ -619,9 +637,9 @@ async function listaArmas(m, k = 0, mensaje = '') {
     if (!dueño) acciones[n.nombre] = async () => {
       if (guardando) return; guardando = true;
       try {
-        await estado.api.request('character/weapon', { character_uid: c.uid, weapon_uid: e.uid });
+        await estado.api.request('character/equipment', { character_uid: c.uid, slot: ranura, equipment_uid: e.uid });
         await cargarCuenta(); await equipo(m);
-      } catch (err) { await listaArmas(m, k, err.message); }
+      } catch (err) { await listaEquipo(m, k, ranura, err.message); }
     };
     return n;
   });
