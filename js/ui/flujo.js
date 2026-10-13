@@ -28,9 +28,12 @@ import { tomarResultado } from './regreso.js';
 import { audio } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
 import { crearPantallaHabilidades } from './habilidades.js';
+import { rutaRetratoEquipo } from './composicion_habilidades.js';
+import { crearCategoriasEquipo, componerListaEquipo } from './inventario_equipo.js';
+import { existe } from './recursos.js';
 import { sumarStatsArbol } from '../habilidades.js';
 import { clavesDisponibles, estadoMision, estadoCapitulo } from './disponibilidad_misiones.js';
-import {DESTINOS_FOOTER,DESTINOS_TOWN,PENDIENTES_MENU,crearMenuPrincipal,crearAvisoPrincipal,objetivosMenu} from './menus_principales.js';
+import {DESTINOS_FOOTER,PENDIENTES_MENU,crearMenuPrincipal,crearCiudadTown,crearAvisoPrincipal,objetivosMenu} from './menus_principales.js';
 import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.js';
 import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
@@ -290,26 +293,24 @@ async function titulo() {
 }
 
 async function home() {
-  estado.aperturaPrincipal++;estado.volverEquipo=null;
-  const c = personajeActual();
-  const ficha = c ? await fichaPersonaje(c.character_id) : null;
-  const [bg, barra, p] = await Promise.all([fondo(FONDO_HOME), Pantalla.cargar('ui/common/common_home_user_status_s.csb'), pie({ menu: true, volver: false })]);
+  const ticket=++estado.aperturaPrincipal;estado.volverEquipo=null;
+  const [ciudad, barra, p] = await Promise.all([crearCiudadTown({town:master()?.data.town}), Pantalla.cargar('ui/common/common_home_user_status_s.csb'), pie({ menu: true, volver: false })]);
+  const bg=ciudad?{pantalla:ciudad}:await fondo(FONDO_HOME);
   const u = estado.cuenta?.user ?? {};
   barra.texto('text_user_name', u.name ?? '');
   barra.texto('text_diamond', u.diamond ?? 0);
   barra.texto('rank_number', '1'); // PROVISIONAL: sin tabla de rango de jugador (D41)
   const gauge = barra.buscar('rank_gauge');
   if (gauge) gauge.porcentaje = 0;
-  // Líder del equipo en el centro (PROVISIONAL: en el juego es un personaje animado en la ciudad).
-  if (ficha) barra.raiz.hijos.unshift(ilustracion('home_leader', ficha.retrato, 375, 1180, 1000));
   await barra.precargar();
+  if(ticket!==estado.aperturaPrincipal)return;
   escena('home', [bg, { pantalla: barra }, { pantalla: p }], {
     ...accionesHome(),
   });
 }
 
 function accionesHome(){
-  return {button_home_quest:()=>mundo(),button_home_party:()=>equipo(null,null),
+  return {button_home_quest:()=>mundo(),button_home_party:()=>equipo(null,null),button_diamond_shop:()=>avisoPrincipal(...PENDIENTES_MENU.diamonds),
     ...Object.fromEntries(Object.entries(DESTINOS_FOOTER).map(([boton,nombre])=>[boton,()=>menuPrincipal(nombre)]))};
 }
 
@@ -321,21 +322,28 @@ async function avisoPrincipal(titulo,mensaje){
   escena('aviso-principal',[...anterior.capas,{velo:'rgba(0,0,0,.8)'},{pantalla:p}],{button_close:volver,button_footer_return:volver});
 }
 
-async function menuPrincipal(nombre,categoria='all'){
+async function menuPrincipal(nombre,categoria='all',indice=0){
   const ticket=++estado.aperturaPrincipal;
   await cargarCuenta();
-  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,banners:master().reclutamiento().banners}),pie()]);
+  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,indice,banners:master().reclutamiento().banners,town:master().data.town}),pie()]);
+  if(nombre==='town')vuelta.mostrar('button_footer_menu',true);
   if(ticket!==estado.aperturaPrincipal)return;
-  const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria));
+  const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria,indice));
   const pendiente=k=>()=>avisoPrincipal(...PENDIENTES_MENU[k]);
   const acciones={button_footer_return:()=>home()};
-  if(nombre==='town')for(const [id,,destino]of DESTINOS_TOWN){
-    acciones['town_'+id]=destino==='misiones'?()=>mundo():destino==='equipo'?abrirEquipo:destino?()=>menuPrincipal(destino):pendiente(id);
+  if(nombre==='town')acciones.button_footer_menu=()=>{const menu=p.buscar('menu_town');p.mostrar('menu_town',!menu.visible);};
+  if(nombre==='town')for(const d of p.destinosMenuOriginal??[]){
+    const mensajes={announce:'Los avisos del servicio original todavía no están disponibles.',notification:'No hay notificaciones del servicio original en esta partida local.',item:'El almacén de objetos todavía está pendiente. Los materiales guardados se muestran al adquirir mejoras.',gift_box:'La bandeja de regalos todavía está pendiente.',exchangeshop:'La tienda de intercambio de este menú todavía está pendiente.',mission:'Las tareas y recompensas de este menú todavía están pendientes.',status:'El estado de usuario completo todavía está pendiente.',others:'Las opciones originales de este submenú todavía están pendientes.',guild:'Los gremios todavía están pendientes.',friend:'La lista de amigos todavía está pendiente.'};
+    acciones[d.boton]=()=>avisoPrincipal(d.titulo,mensajes[d.tipo]);
   }
   if(nombre==='taberna'){
+    acciones.diamonds=pendiente('diamonds');
     for(const k of ['all','chara','weapon'])acciones['button_category_'+k]=()=>menuPrincipal('taberna',k);
     acciones.consultar_taberna=categoria==='chara'?()=>listaPersonajes(null,0,{volver:()=>menuPrincipal(nombre,categoria),seleccionar:false}):abrirEquipo;
     if(categoria!=='weapon')for(const b of master().reclutamiento().banners)acciones['banner_'+b.id]=()=>reclutamiento(b.id);
+    acciones.button_left=()=>menuPrincipal('taberna',categoria,Math.max(0,p.indiceBanner-1));
+    acciones.button_right=()=>menuPrincipal('taberna',categoria,Math.min(p.totalBanners-1,p.indiceBanner+1));
+    if(p.bannerActual)for(const [accion,count]of [['taberna_uno',1],['taberna_once',11]])acciones[accion]=()=>reclutamiento(p.bannerActual.id,{pagina:0,count,todos:false,mensaje:'',resultados:null});
     if(categoria!=='weapon')acciones.ultimo_sorteo=async()=>{
       const r=(await estado.api.request('lottery/last-result')).data;
       if(!r)return avisoPrincipal('Último sorteo','Todavía no hay un resultado guardado en tu partida.');
@@ -376,6 +384,11 @@ async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos
   if(o.fase==='materiales'&&modo==='exchange')propias=propias.filter(e=>{const m=cat.equipo(e.equipment_id),d=cat.equipo(o.destino);return m?.tipo===1&&m.intercambiable&&e.equipment_id!==o.destino&&e.equipment_id!==d?.evolucion;});
   filas=propias.map(e=>({id:e.uid,texto:(protegida(e)&& (modo==='sell'||o.fase==='materiales')?'En uso/protegida · ':'')+nombre(e),activo:!((modo==='sell'||o.fase==='materiales')&&protegida(e))}));
  }
+ filas=filas.map(r=>{
+  const e=o.fase==='destinos'?null:cuenta.equipment.find(e=>e.uid===r.id);
+  const f=cat.equipo(e?.equipment_id??r.id);
+  return {...r,nivel:e?.level??1,rareza:f?.rareza??0,imagen:f?.imagen?`images/equipment/thumb/256/${f.imagen}_thumb256.png`:null};
+ });
  const abrir=cambios=>operacionEquipo(modo,{...o,...cambios,mensaje:''});
  const acciones={button_footer_return:()=>menuPrincipal('upgrade'),pagina_anterior:()=>abrir({pagina:Math.max(0,o.pagina-1)}),pagina_siguiente:()=>abrir({pagina:Math.min(Math.ceil(filas.length/6)-1,o.pagina+1)})};
  for(const r of filas)if(r.activo!==false)acciones['pieza_'+r.id]=()=>{
@@ -396,7 +409,7 @@ async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos
  if(q.materiales.length)detalle+='\n'+q.materiales.map(r=>`${cat.objeto(r.id)?.nombre??r.id} ×${r.cantidad}`).join(' · ');
  if(q.copias)detalle+=`\nCopias adicionales: ${o.uids.length}/${q.copias}`;
  if(!q.permitida)detalle+='\n'+q.motivo;
- const p=await crearPantallaOperacion({titulo:TITULOS_EQUIPO[modo]+(o.fase==='materiales'?' · Materiales':''),saldo:cuenta.user.col,filas,pagina:o.pagina,
+ const p=await crearPantallaOperacion({modo,fase:o.fase,col:q.col,titulo:TITULOS_EQUIPO[modo]+(o.fase==='materiales'?' · Materiales':''),saldo:cuenta.user.col,filas,pagina:o.pagina,
   seleccion:modo==='sell'||o.fase==='materiales'?o.uids:o.fase==='destinos'?[o.destino]:[o.uid],detalle,controles,confirmable:q.permitida,mensaje:o.mensaje});
  if(q.permitida)acciones.revisar_operacion=async()=>{
   const confirmTicket=++estado.aperturaPrincipal;
@@ -406,7 +419,7 @@ async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos
   const stats=consulta.stats?Object.keys(consulta.stats.antes).filter(k=>consulta.stats.antes[k]!==consulta.stats.despues[k]).slice(0,3)
    .map(k=>`${k.toUpperCase()} ${consulta.stats.antes[k]}→${consulta.stats.despues[k]}`).join(' · '):'';
   const premios=consulta.recibir.map(r=>`${cat.objeto(r.id)?.nombre??r.id} ×${r.cantidad}`).join(' · ');
-  const resumen=`${detalle}\n${stats?stats+'\n':''}${premios?'Recibirás '+premios+'\n':''}${consumidos}Al confirmar se guardarán los cambios.`,popup=await crearConfirmacionOperacion(TITULOS_EQUIPO[modo],resumen);
+  const resumen=`${detalle}\n${stats?stats+'\n':''}${premios?'Recibirás '+premios+'\n':''}${consumidos}Al confirmar se guardarán los cambios.`,popup=await crearConfirmacionOperacion(TITULOS_EQUIPO[modo],resumen,{modo});
   if(confirmTicket!==estado.aperturaPrincipal)return;
   let ocupada=false;
   const cancelar=()=>{if(!ocupada)escena('operacion-equipo',anterior.capas,anterior.acciones,{teclado:true});};
@@ -427,7 +440,7 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  if(!b)return avisoPrincipal('Reclutamiento',q.motivo);
  const probabilidades=probabilidadesBanner(b,cat).sort((a,z)=>z.rareza-a.rareza||a.id-z.id);
  const visibles=o.resultados??(o.todos?probabilidades:probabilidades.filter(r=>r.rareza===4));
- const filas=visibles.map((r,i)=>({id:o.resultados?i:r.id,imagen:MINIATURA(o.resultados?r.character_id:r.id),texto:o.resultados?nombrePersonaje(r.character_id):r.nombre,
+ const filas=visibles.map((r,i)=>({id:o.resultados?i:r.id,rareza:o.resultados?cat.personaje(r.character_id).rareza:r.rareza,imagen:MINIATURA(o.resultados?r.character_id:r.id),texto:o.resultados?nombrePersonaje(r.character_id):r.nombre,
   detalle:o.resultados?r.duplicate?'Repetido · +'+r.hacking_crystals+' cristales':'Nuevo · ★'+cat.personaje(r.character_id).rareza:
    `★${r.rareza} · ${r.porcentaje.toFixed(3)}%`}));
  const abrir=cambios=>reclutamiento(id,{...o,...cambios,mensaje:''});
@@ -439,7 +452,7 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'},{id:'animar_sorteo',texto:'Ver animación'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
  acciones.sorteo_uno=()=>abrir({count:1});acciones.sorteo_once=()=>abrir({count:11});acciones.ver_tasas=()=>abrir({todos:!o.todos,pagina:0});acciones.volver_banner=()=>abrir({resultados:null,pagina:0});
  if(o.resultados)acciones.animar_sorteo=()=>reproducirResultados(id,o,o.resultados);
- const p=await crearPantallaOperacion({titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
+ const p=await crearPantallaOperacion({modo:'reclutamiento',resultados:Boolean(o.resultados),todos:o.todos,count:o.count,diamantes:cuenta.user.diamond,titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
   detalle,controles,confirmable:q.permitida&&!o.resultados,confirmarTexto:'Reclutar ×'+o.count,mensaje:o.mensaje});
  if(q.permitida&&!o.resultados)acciones.revisar_operacion=async()=>{
   const confirmTicket=++estado.aperturaPrincipal;
@@ -508,8 +521,6 @@ async function mundo() {
     estado.mundo = id;
     capitulos();
   };
-  // Espacio para el regreso original a tamaño completo (adaptación de esta composición web).
-  for (let i = 1; i <= 3; i++) p.buscar(`button_world_${i}`).y += 48;
   escena('mundo', [bg, { pantalla: p }, { pantalla: vuelta }], {
     button_difficulty_1: cambiar, button_difficulty_2: cambiar, button_difficulty_3: cambiar,
     button_world_1: elegir(0), button_world_2: elegir(1), button_world_3: elegir(2),
@@ -753,9 +764,9 @@ async function preparacion(m) {
 // Equipo (party_select_s): 3 huecos con party_select_character_widget_s; el 1.º es el personaje elegido y el 2.º
 // y el 3.º los del Switch (tocar un hueco abre la lista para ese puesto).
 async function equipo(m,volver=estado.volverEquipo) {
-  estado.aperturaPrincipal++;estado.volverEquipo=m?null:volver;
-  const [p, widget, vuelta] = await Promise.all([Pantalla.cargar('ui/party/party_select_s.csb'),
-    Pantalla.cargar('ui/party/party_select_character_widget_s.csb'), pie()]);
+  const ticket=++estado.aperturaPrincipal;estado.volverEquipo=m?null:volver;
+  const [p, widget, vuelta, estrellas] = await Promise.all([Pantalla.cargar('ui/party/party_select_s.csb'),
+    Pantalla.cargar('ui/party/party_select_character_widget_s.csb'), pie(), Pantalla.cargar('ui/common/common_rarity_widget_s.csb')]);
   for (const nombre of ['button_auto_edit', 'button_character_list_1', 'button_character_item_1', 'button_character_item',
     'button_return_quest_board', 'button_party_edit_quest_board', 'text_party_number', 'image_plate_title_effect',
     'text_title_effect', 'text_effect', 'Image_3', 'button_switch']) p.mostrar(nombre, false);
@@ -763,7 +774,7 @@ async function equipo(m,volver=estado.volverEquipo) {
   panel.ancho = 720; // PROVISIONAL: los 3 huecos (240 de ancho) uno al lado del otro
   const miembros = [0, 1, 2].map(miembroEn);
   const fichasEquipo = await Promise.all(miembros.map((c) => (c ? fichaPersonaje(c.character_id) : null)));
-  const huecos = [0, 1, 2].map((k) => {
+  const huecos = await Promise.all([0, 1, 2].map(async (k) => {
     const w = clonar(widget.raiz);
     w.nombre = `hueco_${k}`;
     w.x = k * 240;
@@ -772,12 +783,24 @@ async function equipo(m,volver=estado.volverEquipo) {
     const lleno = c && ficha;
     widget.mostrar('background_not_character', !lleno, w);
     widget.mostrar('background_character', Boolean(lleno), w);
+    widget.mostrar('icon_leader', Boolean(lleno) && k === 0, w);
     widget.mostrar('character_widget_1', false, w);
+    widget.mostrar('node_sub_status', false, w); // variante de expedición del editor, sin estado local equivalente.
+    widget.mostrar('text_cost', false, w);
+    widget.mostrar('cost_number', false, w); // no sustituir el coste nativo aún sin identificar por la rareza.
     widget.mostrar('node_assist_character_thumbnail', false, w);
     widget.mostrar('dummy_character', false, w);
+    widget.mostrar('image_used_event', false, w);
+    widget.mostrar('image_used_event_1', false, w); // no hay expediciones/eventos remotos en el backend local.
     // Variantes duplicadas de armas y las funciones todavía pendientes.
     for (const [nodo] of recorrer(w)) if (/^button_(arms|ability|slot_skill|color)/.test(nodo.nombre)) nodo.visible = false;
     if (lleno) {
+      const rareza = widget.buscar('image_rarity', w);
+      rareza.hijos = clonar(estrellas.buscar('image_rarity')).hijos;
+      for (let i = 1; i <= 6; i++) {
+        estrellas.mostrar('image_star_blank_' + i, false, rareza);
+        estrellas.mostrar('image_star_' + i, i <= ficha.rareza, rareza);
+      }
       const botonArma = widget.buscar('button_arms_edit', w);
       if (botonArma) { botonArma.visible = true; botonArma.nombre = `arma_${k}`; }
       widget.texto('text_arms_edit', 'Equipo', w);
@@ -795,16 +818,25 @@ async function equipo(m,volver=estado.volverEquipo) {
       widget.texto('attack_number', st.atk, w);
       widget.texto('defense_number', st.def, w);
       widget.texto('critical_number', st.crit, w);
-      widget.texto('cost_number', ficha.rareza ?? '', w); // PROVISIONAL: coste sin leer
       ponerImagen(widget.buscar('dummy_job_icon', w), `images/icon/character/icon_job_${ficha.arma}.png`);
       const fig = widget.buscar('image_party_character', w);
-      if (fig) { ponerImagen(fig, `images/character/character_${ficha.retrato}.png`); Object.assign(fig, { ancho: 240, alto: 834, cubrir: 'arriba' }); }
+      if (fig) {
+        // Algunas fichas importadas tienen el PNG base vacío y el dibujo en _1,
+        // igual que el retrato de Ranuras/cut-in resuelto por el exportador.
+        const retrato = rutaRetratoEquipo(ficha.retrato ?? c.character_id);
+        ponerImagen(fig, await existe(retrato) ? retrato : 'images/character/party/no_image.png');
+        // Conservar 252×834, ancla y posición originales del CSB.
+        delete fig.cubrir;
+      }
     }
+    const fondoHueco=widget.buscar(lleno?'background_character':'background_not_character',w);
+    fondoHueco.nombre=`hueco_${k}`;fondoHueco.tactil=true;
     return w;
-  });
+  }));
   panel.hijos = [...panel.hijos.filter((h) => !h.nombre.startsWith('background_character_')), ...huecos];
   panel.panel = { ...(panel.panel ?? {}), recorte: true };
   await p.precargar(panel);
+  if(ticket!==estado.aperturaPrincipal)return;
   const n = Math.max(1, personajes().length);
   const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; equipo(m); };
   escena('equipo', [{ pantalla: p }, { pantalla: vuelta }], {
@@ -824,17 +856,19 @@ const opcionesEquipo = {
   armor: { nombre: 'Armadura', plural: 'Armaduras', sin: 'Sin armadura', stats: ['hp', 'def'] },
   accessory: { nombre: 'Accesorio', plural: 'Accesorios', sin: 'Sin accesorio', stats: ['hp', 'mp', 'atk', 'def', 'crit'] },
 };
-const listaArmas = (m, k = 0) => listaEquipo(m, k, 'weapon');
+const listaArmas = (m, k = 0) => listaEquipo(m, k);
 
 async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegido = null, mensaje = '') {
-  estado.aperturaPrincipal++;
+  const ticket = ++estado.aperturaPrincipal;
   await cargarCuenta();
   const c = miembroEn(k); if (!c) return equipo(m);
   const catalogo = master(), pj = catalogo.personaje(c.character_id);
+  const ficha = await fichaPersonaje(c.character_id);
+  const stats = sumarStatsEquipo(sumarStatsArbol(characterStats({personajes:{[c.character_id]:ficha}},c.character_id,c.level),ficha,c,catalogo.habilidades()),equiposDeCuenta(estado.cuenta,c,catalogo));
   const [bg, vuelta] = await Promise.all([fondo(FONDO_MENU), pie()]);
   let comprando = false;
   const { pantalla, acciones } = await crearPantallaHabilidades({ personaje: pj, instancia: c,
-    catalogo: catalogo.habilidades(), cuenta: estado.cuenta, master: catalogo, modo, seleccionado, elegido, mensaje,
+    catalogo: catalogo.habilidades(), cuenta: estado.cuenta, master: catalogo, modo, seleccionado, elegido, mensaje, stats, retrato:ficha.retrato,
     volver: () => equipo(m), abrir: (modo, n = null, e = null) => habilidades(m, k, modo, n, e),
     comprar: async (modo, n, consulta, e) => {
       if (comprando) return; comprando = true;
@@ -845,72 +879,61 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
           direction: consulta.direccion, choose_master_item_id: consulta.material,use_hacking_crystals:e?.cristales===true }
           : { character_uid: c.uid, slot: n, expected_level: consulta.nivel, choose_master_item_id: e };
         await estado.api.request(modo === 'arbol' ? 'character/ability-board' : 'character/slot-skill', params);
+        if (ticket !== estado.aperturaPrincipal) return;
         await habilidades(m, k, modo, n, null, 'Mejora guardada');
-      } catch (err) { await habilidades(m, k, modo, n, e, err.message); }
+      } catch (err) { if (ticket === estado.aperturaPrincipal) await habilidades(m, k, modo, n, e, err.message); }
     },
   });
+  if (ticket !== estado.aperturaPrincipal) return;
   escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones,{teclado:true});
 }
 
 // D77: lista y botones originales; asignaciones/acciones son del backend local.
-async function listaEquipo(m, k = 0, ranura = 'weapon', mensaje = '') {
-  estado.aperturaPrincipal++;
+async function listaEquipo(m, k = 0, ranura = null, mensaje = '') {
+  const ticket=++estado.aperturaPrincipal;
   await cargarCuenta();
   const c = miembroEn(k); if (!c) return equipo(m);
-  const [bg, p] = await Promise.all([fondo(FONDO_MENU), Pantalla.cargar('ui/equip/equip_list_s.csb')]);
-  for (const n of ['image_body_material', 'image_header_material', 'image_footer_material', 'layout_contents_material',
-    'image_note', 'button_sort', 'background_title']) p.mostrar(n, false);
+  const catalogo = master(), pj = catalogo.personaje(c.character_id), ficha = await fichaPersonaje(c.character_id);
+  const rutaPieza = f => f?.imagen ? `images/equipment/thumb/256/${f.imagen}_thumb256.png` : null;
+  const categorias = Object.fromEntries(Object.keys(opcionesEquipo).map(r => {
+    const e = equipoDeCuenta(estado.cuenta, c, catalogo, r);
+    return [r, e ? { nivel:e.nivel ?? 0, rareza:e.rareza ?? 0, imagen:rutaPieza(e) } : null];
+  }));
+  const bg = await fondo(FONDO_MENU);
+  if (!ranura) {
+    const stats = sumarStatsEquipo(sumarStatsArbol(characterStats({personajes:{[c.character_id]:ficha}},c.character_id,c.level),ficha,c,catalogo.habilidades()),equiposDeCuenta(estado.cuenta,c,catalogo));
+    const p = await crearCategoriasEquipo({pjNombre:nombrePersonaje(c.character_id),imagenPersonaje:MINIATURA(c.character_id),nivel:c.level,rareza:pj.rareza,stats,categorias,cantidad:estado.cuenta.equipment.length,mensaje});
+    const volver = () => equipo(m);
+    if(ticket!==estado.aperturaPrincipal)return;
+    escena('categorias-equipo',[bg,{pantalla:p}],{
+      button_close:volver,button_ok:volver,button_footer_return:volver,
+      ...Object.fromEntries(Object.keys(opcionesEquipo).map(r=>['categoria_'+r,()=>listaEquipo(m,k,r)])),
+    },{teclado:true});
+    return;
+  }
+  const p = await Pantalla.cargar('ui/equip/equip_list_s.csb');
   const opcion = opcionesEquipo[ranura], campo = RANURAS_EQUIPO[ranura];
-  p.texto('text_possession_equipment', opcion.plural);
-  const catalogo = master(), pj = catalogo.personaje(c.character_id);
-  const armas = estado.cuenta.equipment.filter((e) => equipoCompatible(pj, catalogo.equipo(e.equipment_id), ranura));
-  p.texto('possession_equipment_number', armas.length);
-  p.raiz.hijos.push(nodoTexto('titulo_armas', `Equipo · ${nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, '')}`, 375, 1320, 30));
-  const equipada = equipoDeCuenta(estado.cuenta, c, catalogo, ranura);
-  const aviso = mensaje || (armas.length ? `Actual: ${equipada?.nombre ?? opcion.sin}` : `No tienes ${opcion.plural.toLowerCase()} compatibles. Obtén equipo en las misiones.`);
-  p.raiz.hijos.push(nodoTexto('estado_armas', aviso, 375, 1190, 25,
-    mensaje ? { r: 255, g: 180, b: 160 } : { r: 210, g: 225, b: 240 },
-    { ancho: 710, alto: 70, tamPropio: true }));
-  const sv = p.buscar('equipment_list'), filas = [{ uid: null }, ...armas];
-  const alto = Math.max(sv.alto, filas.length * 116);
-  const acciones = { button_close: () => equipo(m), button_footer_return: () => equipo(m) };
-  Object.entries(opcionesEquipo).forEach(([r, o], i) => {
-    const tab = clonar(p.buscar('button_sort'));
-    Object.assign(tab, { nombre: `categoria_${r}`, visible: true, tactil: true, x: 130 + 245 * i, y: 1261,
-      ancho: 230, alto: 60, anclaX: .5, anclaY: .5, escalaX: 1, escalaY: 1, zOrder: 10 });
-    tab.hijos = [nodoTexto(`texto_${r}`, o.nombre, 115, 30, 26,
-      r === ranura ? {r:110,g:230,b:255} : {r:245,g:245,b:250})];
-    p.raiz.hijos.push(tab); acciones[tab.nombre] = () => listaEquipo(m, k, r);
-  });
-  let guardando = false;
-  sv.hijos = filas.map((e, i) => {
+  const armas = estado.cuenta.equipment.filter(e=>equipoCompatible(pj,catalogo.equipo(e.equipment_id),ranura));
+  const filas = [{uid:null},...armas];
+  const piezas = filas.map(e=>{
     const f = e.uid == null ? null : catalogo.equipo(e.equipment_id);
-    const dueño = e.uid == null ? null : estado.cuenta.characters.find((x) => Object.entries(RANURAS_EQUIPO)
-      .some(([r, campo]) => x[campo] === e.uid && (x.uid !== c.uid || r !== ranura)));
-    const actual = (c[campo] ?? null) === e.uid;
-    const nombre = e.uid == null ? opcion.sin : f.nombre;
-    const st = f ? statsEquipo(f, e.level ?? 1) : null;
-    const stats = st ? opcion.stats.filter((s) => st[s]).map((s) => `${s.toUpperCase()} ${st[s]}`).join(' · ') : '';
-    const detalle = e.uid == null ? 'Retirar esta pieza del equipo' : `Lv ${e.level ?? 1} · R${f.rareza} · ${stats || 'Sin estadísticas'}${actual ? ' · Equipado' : dueño ? ' · En uso' : ''}`;
-    const n = { ...base, clase: 'Panel', nombre: `elegir_arma_${i}`, x: 10, y: alto - (i + 1) * 116,
-      ancho: 700, alto: 108, anclaX: 0, anclaY: 0, tactil: !dueño,
-      panel: { tipoColor: 1, color: actual ? { r: 35, g: 78, b: 98 } : { r: 25, g: 32, b: 45 }, opacidad: 235 },
-      hijos: [nodoTexto('nombre_arma', nombre, 18, 73, 27, { r: 245, g: 245, b: 250 },
-        { ancho: 664, alto: 38, tamPropio: true, anclaX: 0, alineH: 0 }),
-      nodoTexto('detalle_arma', detalle, 18, 30, 22, { r: 160, g: 195, b: 210 },
-        { ancho: 664, alto: 30, tamPropio: true, anclaX: 0, alineH: 0 })] };
-    if (!dueño) acciones[n.nombre] = async () => {
-      if (guardando) return; guardando = true;
-      try {
-        await estado.api.request('character/equipment', { character_uid: c.uid, slot: ranura, equipment_uid: e.uid });
-        await cargarCuenta(); await equipo(m);
-      } catch (err) { await listaEquipo(m, k, ranura, err.message); }
-    };
-    return n;
+    const dueno = e.uid == null ? null : estado.cuenta.characters.find(x=>Object.entries(RANURAS_EQUIPO).some(([r,field])=>x[field]===e.uid&&(x.uid!==c.uid||r!==ranura)));
+    const st = f ? statsEquipo(f,e.level??1) : null;
+    return {uid:e.uid,nombre:f?.nombre??opcion.sin,nivel:e.level??0,rareza:f?.rareza??0,imagen:rutaPieza(f),stats:st??{},actual:(c[campo]??null)===e.uid,dueno:!!dueno};
   });
-  sv.interior = { ancho: sv.ancho, alto, direccion: 1 };
+  await componerListaEquipo(p,{piezas,categoria:ranura,pjNombre:nombrePersonaje(c.character_id),mensaje});
   await p.precargar();
-  escena('armas', [bg, { pantalla: p }], acciones);
+  let guardando = false;
+  const acciones = {button_close:()=>listaEquipo(m,k),button_footer_return:()=>listaEquipo(m,k)};
+  piezas.forEach((pieza,i)=>{if(pieza.dueno)return;
+    acciones['elegir_arma_'+i] = async()=>{
+      if(guardando)return;guardando=true;
+      try {await estado.api.request('character/equipment',{character_uid:c.uid,slot:ranura,equipment_uid:pieza.uid});if(ticket!==estado.aperturaPrincipal)return;await cargarCuenta();await equipo(m);}
+      catch(err){if(ticket===estado.aperturaPrincipal)await listaEquipo(m,k,ranura,err.message);}
+    };
+  });
+  if(ticket!==estado.aperturaPrincipal)return;
+  escena('armas',[bg,{pantalla:p}],acciones,{teclado:true});
 }
 
 // Personajes de la cuenta (character_list_s): miniaturas; tocar una la pone en el puesto `k` del equipo (en los

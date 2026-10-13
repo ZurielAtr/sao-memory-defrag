@@ -10,6 +10,7 @@ import { catalogoReclutamiento } from './exportar_reclutamiento.js';
 import { catalogoHabilidades } from './exportar_habilidades.js';
 import {exportarEfectosHistoria} from './exportar_efectos_historia.js';
 import {metadataHistorias} from './metadata_historia.js';
+import { catalogoTown } from './exportar_town.js';
 
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -198,6 +199,7 @@ export async function exportarApi(fuente, salida) {
     habilidades: await catalogoHabilidades(fuente),
     operaciones:await catalogoOperaciones(fuente),
     reclutamiento:await catalogoReclutamiento(fuente,characters),
+    town: await catalogoTown(fuente),
     misiones, drops, recompensas: rewards,
   };
   await salida.escribir('api_master.json', aJSON(data));

@@ -22,7 +22,9 @@ export async function catalogoHabilidades(fuente) {
   for (const r of await fuente.md('active_skill') ?? []) {
     activas[id32(r.f0)] = { ...skillData(r.f24, [r], attacks), animacion: `skill_${r.f24}` };
   }
-  const pasivas = new Set((await fuente.md('passive_skill') ?? []).map(r=>id32(r.f0)));
+  const filasPasivas = await fuente.md('passive_skill') ?? [];
+  const pasivas = new Set(filasPasivas.map(r=>id32(r.f0)));
+  const nombresPasivas = Object.fromEntries(filasPasivas.map(r=>[id32(r.f0),r.f1??'']));
   for (const grupo of Object.values(fichas)) for (const f of Object.values(grupo)) {
     if ((f.pasiva > 0 && !pasivas.has(f.pasiva)) || (f.activa > 0 && !activas[f.activa])) f.efectoPendiente = true;
   }
@@ -61,6 +63,6 @@ export async function catalogoHabilidades(fuente) {
     const grupo = costesCrecimiento[g.f0] = {};
     for (const r of g.f1 ?? []) (grupo[r.f2] ??= []).push({ id: r.f3 ?? 0, cantidad: r.f4 ?? 0 });
   }
-  return { ranuras, fichas, activas, arboles, valores, costesNodos, costesLiberacion,
+  return { ranuras, fichas, activas, nombresPasivas, arboles, valores, costesNodos, costesLiberacion,
     costesLimite, tasasLimite, gruposCrecimiento, crecimientos, costesCrecimiento };
 }
