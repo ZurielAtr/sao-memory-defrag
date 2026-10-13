@@ -2,7 +2,7 @@
 // misiones/<id>.json y misiones/index.json. Qué es cada campo: en el .py.
 
 import { get, o, verdad, ordenar, aJSON } from './py.js';
-import { normalHits, porId, porNivel } from './comun.js';
+import { normalHits, porId, porNivel, eventos } from './comun.js';
 
 const CAMPOS = [['f0', 'id'], ['f1', 'dificultad'], ['f5', 'ia'], ['f6', 'modoIa'], ['f7', 'maestro'], ['f8', 'lado'],
   ['f9', 'drop'], ['f10', 'equipo'], ['f11', 'grupo'], ['f12', 'lider'], ['f13', 'nivel']];
@@ -114,6 +114,11 @@ export async function exportarMision(d, qid) {
         nombre: get(r, 'f1'),
         elemento: get(r, 'f5', 1),
         unidad: unit,
+        fisica: { escala: get(r, 'f12', 100) / 100,
+          tamano: [get(d.units.get(get(r, 'f3')) ?? {}, 'f6', 0), get(d.units.get(get(r, 'f3')) ?? {}, 'f7', 0)] },
+        radio: get(r, 'f9', 0),
+        eventosGeometria: Object.fromEntries(Object.entries(eventos(get(r, 'f13'), d.attacks))
+          .filter(([, e]) => e.geometria).map(([n, e]) => [n, { geometria: e.geometria }])),
         traje: costume,
         normales: normalHits(r, d.attacks, 'f13'),
         porNivel: porNivel(d.stats[String(mid)]),

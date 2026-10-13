@@ -10,6 +10,9 @@ export const TIPO = { ORIGEN: 1, ATAQUE: 2, CUERPO: 4 };
 
 const cache = new Map();
 
+// Escala lógica del modelo (+0x164); no es el zoom ni la escala de dibujo del renderer.
+export const escalaFisica = (u) => u.fisica?.escala ?? u.pj?.fisica?.escala ?? u.ficha?.fisica?.escala ?? 1;
+
 export function cargarCajas(unidad) {
   if (!cache.has(unidad)) {
     cache.set(unidad, fetch(rutaWeb(`/data/cajas/${unidad}.json`)).then((r) => (r.ok ? r.json() : null)).catch(() => null));
@@ -26,7 +29,7 @@ export function cajasDe(u) {
 
 // Rectángulo en el mundo de una caja [id, tipo, x, y, ancho, alto] de la unidad `u`.
 // `mira` = signo de x hacia donde mira el arte (dir · artFacing); `suelo` = altura de la unidad sobre el suelo.
-export function rectDe(u, caja, cajas, { escala = 1, suelo = 0 } = {}) {
+export function rectDe(u, caja, cajas, { escala = escalaFisica(u), suelo = 0 } = {}) {
   const origen = cajas.find((c) => c[0] === 1) ?? [1, 1, 0, 0, 1, 1];
   const mira = (u.dir ?? 1) * (u.artFacing ?? 1);
   const cx = u.x + ((caja[2] - origen[2]) * escala * mira) / PIXELES_POR_UNIDAD;

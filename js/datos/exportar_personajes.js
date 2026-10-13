@@ -180,6 +180,8 @@ export async function exportarPersonajes(fuente, salida) {
       guardia: [get(r, 'f50', 0), get(r, 'f51', 0)],
       medidor: [...f34, ...Array(18).fill(0)][17],
       radio: get(r, 'f14', 0),
+      fisica: { escala: get(r, 'f37', 10000) / 10000,
+        tamano: [get(unit, 'f6', 0), get(unit, 'f7', 0)] }, // 008290d8/008526a0.
       pasivas: o(get(r, 'f36'), []).filter((i) => verdad(i)),
       estadosMax: [...f34],
       velocidad: get(r, 'f11', 100) / 100,

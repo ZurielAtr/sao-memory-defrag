@@ -127,7 +127,9 @@ export async function exportarApi(fuente, salida) {
   const items = {};
   for (const r of await fuente.md('item')) items[r.f0] = { nombre: get(r, 'f4'), tipo: get(r, 'f2') };
   const equipment = {};
-  for (const r of await fuente.md('equipment')) equipment[r.f0] = { nombre: get(r, 'f6'), rareza: get(r, 'f1') };
+  for (const r of await fuente.md('equipment')) equipment[r.f0] = {
+    nombre: get(r, 'f6'), rareza: get(r, 'f1'), correccionSalida: get(r, 'f26', 0), // 00699818.
+  };
 
   const quests = new Map();
   for (const r of (await fuente.md('quest')).f0) {

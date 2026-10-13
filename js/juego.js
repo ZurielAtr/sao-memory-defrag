@@ -26,7 +26,7 @@ import { IAEnemigo } from './ia.js';
 import { volverAInterfaz } from './ui/regreso.js';
 import { HudBatalla } from './ui/hud.js';
 import { cargarCajas, anchoCuerpo, PIXELES_POR_UNIDAD } from './cajas.js';
-import { Proyectiles, resolverImpactoBala, responderParadaBala, colisionarProyectiles } from './proyectiles.js';
+import { Proyectiles, resolverImpactoBala, responderParadaBala, resolverContactosProyectiles } from './proyectiles.js';
 import { actualizarDefensa, resolverGolpe, recuperarMedidor } from './defensa.js';
 import { pausaDeGolpe, pausar, enPausa, descontarPausa, PAUSA_PARADA } from './impacto.js';
 import { moverConVelocidad, orientar, GIRO_RAIZ } from './movimiento.js';
@@ -1285,6 +1285,9 @@ class Battle {
         if (!m) throw new Error(`enemigo ${pl.maestro} sin exportar en la misión`);
         const e = cloneCharacter(this.protos.get(`${m.unidad}|${m.traje ?? ''}`));
         const enemy = makeEnemy(e, { stats: enemyStats(this.mission, pl.maestro, pl.nivel), normales: m.normales, placed: pl.x == null ? null : pl });
+        enemy.fisica = m.fisica ?? { escala: 1 };
+        enemy.eventosGeometria = m.eventosGeometria;
+        enemy.radio = m.radio ?? 15;
         enemy.proyectiles = this.proyectilesEnemigos.get(String(pl.maestro)).instanciar();
         enemy.wave = pl.otros?.f15 ?? 0; // aparición que lo trae (0 = desde el inicio)
         enemy.waitedBy = pl.otros?.f16 ?? 0; // aparición tipo 4 que espera su muerte
@@ -1718,7 +1721,7 @@ async function cargarMiembro(id, i, combat) {
   ]);
   if (pj) combat.personajes[id] = pj; // D46: cualquier personaje, no solo los de combate.json
   Object.assign(ch, {
-    idPj: id, pj, cajas, skillData, proyectiles: proy,
+    idPj: id, pj, cajas, skillData, proyectiles: proy, fisica: pj?.fisica ?? { escala: 1 },
     // D56: velocidad (stat 5), salto (character_job.f6) y paso (character.f13).
     velBase: pj?.velocidad ?? 1, saltoVel: pj?.salto || 1062, pasoVel: pj?.paso || 990,
     // PROVISIONAL (D46): 240 cuerpo a cuerpo; armas de distancia (character_job.f5 = 1000) escalado.
@@ -1936,11 +1939,6 @@ async function main() {
     actualizarDefensa(player, player.eventosDef); // D53
     // D61: las balas que no hacen daño aplican su buff al enemigo (las de buff propio: sin portar). Las de
     // quien acaba de salir siguen su camino.
-    for (const m of grupo) {
-      m.proyectiles.update(dt, m, foes, impactoProyectil, {
-        objetivosBala: (b) => b.equipo === 'enemigo' ? (player.hp > 0 && !playerInvulnerable(player) ? [player] : []) : foes,
-      });
-    }
     for (const e of foes) {
       if (e.hidden || enPausa(e)) continue;
       const r0 = e.rootOffset, a0 = e.anim;
@@ -1948,12 +1946,21 @@ async function main() {
       orientarRaiz(e, r0, a0);
       actualizarDefensa(e, e.eventos);
     }
+    for (const m of grupo) {
+      m.proyectiles.update(dt, m, foes, impactoProyectil, { diferirContactos: true,
+        objetivosBala: (b) => b.equipo === 'enemigo' ? (player.hp > 0 && !playerInvulnerable(player) ? [player] : []) : foes,
+      });
+    }
     for (const e of foes) {
       const objetivos = player.hp > 0 && !playerInvulnerable(player) ? [player] : [];
       e.proyectiles.update(dt, e, objetivos, impactoProyectil,
-        { emitir: e.alive && !e.hidden && !enPausa(e), objetivosBala: (b) => b.equipo === 'jugador' ? foes : objetivos });
+        { emitir: e.alive && !e.hidden && !enPausa(e), diferirContactos: true,
+          objetivosBala: (b) => b.equipo === 'jugador' ? foes : objetivos });
     }
-    colisionarProyectiles([...grupo, ...foes].map((u) => u.proyectiles));
+    resolverContactosProyectiles([...grupo, ...foes].map((u) => u.proyectiles), {
+      actores: [...grupo, ...foes], anchoCampo: battle.fieldWidth, golpear: impactoProyectil,
+      objetivosBala: (b) => b.equipo === 'jugador' ? foes : (player.hp > 0 && !playerInvulnerable(player) ? [player] : []),
+    });
     miraProyectiles.actualizar(player.apuntado57, player, {
       ficha: player.proyectiles.datos.balas[player.apuntado57?.bala],
     });

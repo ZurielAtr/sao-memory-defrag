@@ -1,4 +1,5 @@
 import { rutaWeb } from './rutas.js';
+import { aplicarDispersionArma } from './dispersion_proyectiles.js';
 // Proyectiles de personajes y enemigos (D48/D71/D72). Exportador compartido entre Node y OPFS.
 // Datos: proyectiles/<personaje>.json y proyectiles_enemigos/<maestro>.json.
 //
@@ -20,13 +21,16 @@ import { rutaWeb } from './rutas.js';
 //   proyectiles.quads()             // para dibujar
 
 import { loadSSBP } from './character.js';
+import { escalaFisica } from './cajas.js';
+import { dimensionesActor, geometriaActor } from './dimensiones_actor.js';
 import { buildCharacterQuads } from './renderer.js';
 import { cajasDe, rectDe, seCruzan, PIXELES_POR_UNIDAD, TIPO } from './cajas.js';
 import { sonidosCruzados } from './audio/eventos.js';
 import { resolverGolpe } from './defensa.js';
 import { enPausa, descontarPausa } from './impacto.js';
 import { parametrosSeguimiento, orientarTeledirigida } from './teledireccion.js';
-import { resolverColisionesBalas } from './colision_balas.js';
+import { resolverColisionesBalas, resolverContactoBalas } from './colision_balas.js';
+import { crearInventarioContactos } from './inventario_contactos.js';
 import { configurarApuntado57, actualizarApuntado57, alcanceApuntado57 } from './apuntado_proyectiles.js';
 import { reflejarBala } from './reflexion_proyectiles.js';
 import { nivelCargaRifle } from './carga_rifle.js';
@@ -59,7 +63,7 @@ export function puntoSalida(p, disparo) {
   }
   const [dx, dy, angulo = 0] = disparo.punto ?? PROVISIONAL.salida;
   const mira = (p.dir ?? 1) * (p.artFacing ?? 1);
-  const escala = p.ficha?.fisica?.escala ?? 1;
+  const escala = escalaFisica(p);
   // D58: la bala sale a la profundidad de quien dispara y mide su altura desde el suelo de esa z.
   return { x: p.x + (dx * mira * escala) / PIXELES_POR_UNIDAD, y: p.y + dy * escala / PIXELES_POR_UNIDAD,
     z: (p.z ?? 0) + (disparo.tipo === 4 ? disparo.f4 ?? 0 : 0), suelo: p.suelo ?? p.y - (p.alt ?? 0), angulo };
@@ -87,16 +91,15 @@ export function crearBala(id, ficha, { x, y, dir, z = null, suelo = null, angulo
     artFacing: fis?.artFacing ?? 1,
     golpeados: new Map(), // attack id -> Set de enemigos ya golpeados (un golpe por enemigo y ventana)
     hechos: new Set(), // tramos de balas hijas ya disparados
-    muerta: false, agotada: false, activas: new Map(),
+    muerta: false, agotada: false, activas: new Map(), esBala: true, ordenCreacion: ++siguienteBala,
   };
   apuntarBala(bala, objetivo);
   return bala;
 }
 
-// Tamaño físico actualizado desde las cajas de cuerpo; respaldo explícito mientras no se exporte +0x28.
+// 0083c944: tamaño base o caja elegida por evento79, no la caja de cuerpo más grande.
 export function centroObjetivoBala(u) {
-  const cuerpos = (cajasDe(u) ?? []).filter((c) => c[1] === TIPO.CUERPO);
-  const alto = u.altoFisico ?? (cuerpos.length ? Math.max(...cuerpos.map((c) => c[5])) / PIXELES_POR_UNIDAD : 0);
+  const { alto } = dimensionesActor(u);
   return [u.x, (u.alt ?? u.y - (u.suelo ?? 0)) + alto / 2, u.z ?? 0];
 }
 
@@ -114,9 +117,7 @@ export function apuntarBala(b, objetivo) {
     b.vx = velocidad * dx / distancia; b.vz = velocidad * dz / distancia;
   }
   if (fis.apuntarY > 0 && b.vx) {
-    const cajas = cajasDe(objetivo), cuerpos = cajas?.filter((c) => c[1] === TIPO.CUERPO) ?? [];
-    const rs = cuerpos.map((c) => rectDe(objetivo, c, cajas, { suelo: objetivo.alt ?? 0 }));
-    const altura = fis.apuntarSuelo ? 0 : rs.length ? (Math.min(...rs.map((r) => r.y)) + Math.max(...rs.map((r) => r.y + r.h))) / 2 : (objetivo.alt ?? 0);
+    const altura = fis.apuntarSuelo ? 0 : centroObjetivoBala(objetivo)[1];
     const dy = altura - (b.y - (b.suelo ?? 0));
     if (Math.abs(Math.atan2(dy, Math.abs(dx)) - Math.atan2(b.vy, Math.abs(b.vx))) < fis.apuntarY * Math.PI / 180) {
       const tiempo = Math.abs(dx / b.vx);
@@ -172,13 +173,13 @@ export function tocaCaja(b, idCaja, e, suelo = 0, ids = null) {
 export function tocaDefensasBala(b, caja, e, suelo = 0) {
   const g = b.ficha.ataques?.[b.activas.get(caja) ?? b.ficha.ataque] ?? {};
   const d = e.defensa;
-  const profundidad = g.prof == null ? Infinity : g.prof * (b.ficha.fisica?.escala ?? 1);
+  const profundidad = g.prof == null ? Infinity : g.prof * escalaFisica(b);
   const dz = Math.abs((e.z ?? 0) - (b.z ?? 0));
-  if (d?.parada?.size && dz <= profundidad + (d.radioParada || e.radio || 0) &&
+  if (d?.parada?.size && dz <= profundidad + (d.radioParada || e.radio || 0) * escalaFisica(e) &&
       tocaCaja(b, caja, e, suelo, d.parada)) return true;
-  if (g.parable && d?.auto?.size && dz <= profundidad + (d.radioAuto || e.radio || 0) &&
+  if (g.parable && d?.auto?.size && dz <= profundidad + (d.radioAuto || e.radio || 0) * escalaFisica(e) &&
       tocaCaja(b, caja, e, suelo, d.auto)) return true;
-  if (dz >= profundidad + (e.radio ?? 0)) return false;
+  if (dz > profundidad + (e.radio ?? 0) * escalaFisica(e)) return false;
   return tocaCaja(b, caja, e, suelo);
 }
 
@@ -220,8 +221,8 @@ export function responderParadaBala(b, defensor, g, opciones = {}) {
  * `toca(b, idCaja, e)` = choque por cajas (true/false, o null sin datos). Devuelve las balas hijas que
  * dispara en este paso: [{ id, x, y, dir }].
  */
-export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = () => null) {
-  if (b.ficha.fisica) return moverBalaOriginal(b, dt, foes, golpear, numFrames, toca);
+export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = () => null, opciones = {}) {
+  if (b.ficha.fisica) return moverBalaOriginal(b, dt, foes, golpear, numFrames, toca, opciones);
   const f = b.ficha;
   const hijas = [];
   b.vida += dt;
@@ -295,7 +296,7 @@ export function moverBala(b, dt, foes, golpear, numFrames = () => null, toca = (
 
 // D72: FUN_00823260 integra p += v·dt + a·dt²/2, v += a·dt. FUN_00821240/008236fc
 // resuelven alcance, suelo y fases; FUN_00821ffc cuenta impactos, sin limitar siempre al primer cuerpo.
-function moverBalaOriginal(b, dt, foes, golpear, numFrames, toca) {
+function moverBalaOriginal(b, dt, foes, golpear, numFrames, toca, opciones) {
   const f = b.ficha, fis = f.fisica, hijas = [];
   if (b.fase === 'appear' && numFrames('appear') == null && !f.eventos?.appear) cambiarFase(b, 'wait');
   if (b.agotada && b.fase === 'wait') cambiarFase(b, 'dead');
@@ -346,34 +347,27 @@ function moverBalaOriginal(b, dt, foes, golpear, numFrames, toca) {
     if (ev.tipo === 1) b.activas.set(ev.caja, ev.f3);
     if (ev.tipo === 2) { b.activas.clear(); b.golpeados.clear(); }
     if (ev.tipo === 3) b.cuerpos.add(ev.caja);
+    if (ev.tipo === 79) b.cajaTamano = ev.caja;
   }
   const fase = b.fase;
+  // Con datos funcionales, evento1 activa una caja hasta evento2. El contacto
+  // continúa aunque el tramo exportado contenga solo el cuadro de activación.
+  if (f.funcionales?.[fase]) for (const [caja, ref] of b.activas) {
+    const atk = f.ataques?.[ref];
+    if (!atk) continue;
+    const contacto = { clave: `${fase}:activa:${ref}:${caja}`, atk, caja, ref, fase };
+    if (opciones.diferirContactos) (b.contactosPendientes ??= []).push(contacto);
+    else resolverVentanaBala(b, contacto, [...foes].sort((a, c) => (a.x - c.x) * b.sentido), golpear, toca);
+  }
   for (const [inicio, fin, tipo, ref, caja, f4 = 0, vec2] of f.eventos?.[fase] ?? []) {
     if (inicio > cuadro || fin < Math.min(desde, cuadro)) continue;
     if (tipo === 1) {
-      if (f.funcionales?.[fase] && b.activas.get(caja) !== ref) continue;
+      if (f.funcionales?.[fase]) continue;
       const clave = `${fase}:${inicio}:${ref}:${caja}`;
-      const ya = b.golpeados.get(clave) ?? new Set(); b.golpeados.set(clave, ya);
       const atk = f.ataques?.[ref] ?? { mult: f.multiplicador ?? 1 };
-      const tocados = foes.filter((e) => {
-        if (!vivo(e) || ya.has(e)) return false;
-        const radio = Math.max(e.radio ?? 0, e.defensa?.parada?.size ? e.defensa.radioParada ?? e.radio ?? 0 : 0,
-          atk.parable && e.defensa?.auto?.size ? e.defensa.radioAuto ?? e.radio ?? 0 : 0);
-        if (atk.prof != null && Math.abs((e.z ?? 0) - b.z) > atk.prof * (fis.escala ?? 1) + radio) return false;
-        const choque = toca(b, caja, e);
-        if (choque !== null) return choque;
-        return Math.abs(e.x - b.x) <= PROVISIONAL.choque + b.paso;
-      }).sort((a, c) => (a.x - c.x) * b.sentido);
-      for (const e of tocados) {
-        ya.add(e);
-        const respuesta = golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
-        if (respuesta?.cortar) break;
-        if (b.muerta) break;
-        if (respuesta?.consumirImpacto !== false && fis.impactos > 0 && (fase === 'wait' || (fase === 'appear' && !fis.sinImpactoAppear))) {
-          b.impactos++;
-          if (b.impactos >= fis.impactos) { agotarBala(b); break; }
-        }
-      }
+      const contacto = { clave, atk, caja, ref, fase };
+      if (opciones.diferirContactos) (b.contactosPendientes ??= []).push(contacto);
+      else resolverVentanaBala(b, contacto, [...foes].sort((a, c) => (a.x - c.x) * b.sentido), golpear, toca);
     } else if (TIPOS_DISPARO.includes(tipo)) {
       const clave = `${fase}:${inicio}:${ref}:${caja}:${f4}`;
       if (b.hechos.has(clave)) continue; b.hechos.add(clave);
@@ -386,6 +380,70 @@ function moverBalaOriginal(b, dt, foes, golpear, numFrames, toca) {
   }
   return hijas;
 }
+
+// Resolver una ventana permite mezclar cuerpos de actores y balas sin dos pasadas.
+function resolverVentanaBala(b, c, candidatos, golpear, toca, { balas = false, blancos = null } = {}) {
+  const { atk, caja, ref, clave, fase } = c, fis = b.ficha.fisica;
+  const ya = b.golpeados.get(clave) ?? new Set(); b.golpeados.set(clave, ya);
+  for (const e of candidatos) {
+    if (!ventanaContactable(b, c)) return true;
+    if (balas && e.esBala) {
+      if (!enPausa(e)) resolverContactoBalas(b, e, { ...atk, caja, ataque: ref }, { agotar: agotarBala });
+      continue;
+    }
+    if (e.esBala || (blancos && !blancos.has(e)) || !vivo(e) || ya.has(e)) continue;
+    const radio = Math.max(e.radio ?? 0, e.defensa?.parada?.size ? e.defensa.radioParada || e.radio || 0 : 0,
+      atk.parable && e.defensa?.auto?.size ? e.defensa.radioAuto || e.radio || 0 : 0);
+    if (atk.prof != null && Math.abs((e.z ?? 0) - b.z) > atk.prof * (fis.escala ?? 1) + radio * escalaFisica(e)) continue;
+    const choque = toca(b, caja, e);
+    if (choque === false || (choque === null && Math.abs(e.x - b.x) > PROVISIONAL.choque + b.paso)) continue;
+    ya.add(e);
+    const respuesta = golpear(e, atk.mult, atk.final, { ...atk, caja }, b);
+    if (respuesta?.cortar || b.muerta) return true;
+    if (respuesta?.consumirImpacto !== false && fis.impactos > 0 &&
+        (fase === 'wait' || (fase === 'appear' && !fis.sinImpactoAppear))) {
+      b.impactos++;
+      if (b.impactos >= fis.impactos) { agotarBala(b); return true; }
+    }
+  }
+  return false;
+}
+
+/** D75: después de avanzar todos los motores, resuelve el inventario espacial común. */
+export function resolverContactosProyectiles(gestores, { actores, anchoCampo, objetivosBala, golpear }) {
+  const balas = gestores.flatMap((pr) => pr.balas);
+  // Registro de balas por creación, independientemente del gestor que las conserva.
+  const unidades = [...actores.filter(vivo), ...balas.filter((b) => !b.muerta)
+    .sort((a, b) => a.ordenCreacion - b.ordenCreacion)];
+  // La escena de prueba sin misión no tiene fondo ni límite físico del campo.
+  const inventario = anchoCampo == null ? { consultar: () => unidades.toReversed() }
+    : crearInventarioContactos(unidades, anchoCampo);
+  for (const b of balas) {
+    for (const c of b.contactosPendientes ?? []) {
+      if (enPausa(b) || !ventanaContactable(b, c)) break;
+      const r = rectBala(b, c.caja, b.suelo ?? 0);
+      // Barrido X y ensanchamiento por profundidad proyectada (0083fbb0/0083cdd8).
+      const prof = (c.atk.prof ?? 0) * escalaFisica(b) * 0.49512147903442383;
+      const dx = b.anterior ? b.anterior.x - b.x : 0;
+      const min = (r?.x ?? b.x - PROVISIONAL.choque) + Math.min(0, dx) - prof;
+      const max = (r ? r.x + r.w : b.x + PROVISIONAL.choque) + Math.max(0, dx) + prof;
+      const blancos = new Set(objetivosBala(b));
+      if (resolverVentanaBala(b, c, inventario.consultar(min, max), golpear,
+        (b, caja, e) => tocaDefensasBala(b, caja, e, b.suelo ?? 0), { balas: true, blancos })) break;
+    }
+    b.contactosPendientes = [];
+  }
+  for (const pr of gestores) pr.finalizarContactos();
+}
+
+// Una transición corta los contactos de la fase anterior. La fase dead/ground
+// puede tener su propio ataque (explosión), incluso tras agotarse el vuelo.
+function ventanaContactable(b, c) {
+  return !b.muerta && b.fase === c.fase &&
+    !(b.agotada && (c.fase === 'wait' || c.fase === 'appear'));
+}
+
+let siguienteBala = 0;
 
 function agotarBala(b, fase = 'dead') {
   b.agotada = true;
@@ -403,6 +461,7 @@ function cambiarFase(b, fase) {
   b.hechos.clear();
   b.activas?.clear();
   b.cuerpos?.clear();
+  b.cajaTamano = 0;
 }
 
 export function colisionarProyectiles(gestores) {
@@ -503,16 +562,17 @@ export class Proyectiles {
    * @param {Character[]} foes
    * @param {(e, rate: number, final: boolean, atk) => void} golpear  aplica un golpe de bala (atk.tipo: D61)
    */
-  update(dt, p, foes, golpear, { emitir = true, objetivosBala = null } = {}) {
+  update(dt, p, foes, golpear, { emitir = true, objetivosBala = null, diferirContactos = false } = {}) {
     if (emitir) this.seguirAnimacion(p, foes, enPausa(p) ? 0 : dt);
     const toca = (b, caja, e) => tocaDefensasBala(b, caja, e, b.suelo ?? this.suelo);
     const existentes = this.balas.length;
     for (let i = 0; i < existentes; i++) {
       const b = this.balas[i];
+      b.contactosPendientes = [];
       if (enPausa(b)) { descontarPausa(b, dt); continue; }
       const faseAntes = b.fase, tiempoAntes = b.t;
       const blancos = objetivosBala ? objetivosBala(b) : foes;
-      const hijas = moverBala(b, dt, blancos, golpear, (fase) => this.cuadrosDe(b, fase), toca);
+      const hijas = moverBala(b, dt, blancos, golpear, (fase) => this.cuadrosDe(b, fase), toca, { diferirContactos });
       if (this.sueloDe) {
         const suelo = this.sueloDe(b.z);
         b.y += suelo - (b.suelo ?? suelo); b.suelo = suelo;
@@ -522,20 +582,26 @@ export class Proyectiles {
         ((b.z < limites.zMin || b.z > limites.zMax) && b.y <= (b.suelo ?? 0)))) b.muerta = true;
       // Terminar de cruzar la fase anterior antes de emitir el cuadro cero de la nueva.
       // El choque/fin puede cambiar de fase dentro de moverBala, incluso saltando varios cuadros.
-      const emitir = (fase, tiempo) => {
-        const se = b.ficha.sonidos?.[fase];
-        if (!se?.sonidos || !this.alSonido) return;
-        const fps = se.fps ?? PROVISIONAL.fps;
-        const ahora = tiempo * fps;
-        const antes = b._faseAudio === fase ? b._cuadroAudio : -1;
-        const n = (this.cuadrosDe(b, fase) ?? ultimoCuadro(b.ficha.eventos?.[fase]) + 1) * fps / PROVISIONAL.fps;
-        for (const s of sonidosCruzados(se.sonidos, antes, ahora, n, fase === 'wait' && (Boolean(b.ficha.fisica) || Boolean(b.ficha.velocidad)))) this.alSonido(s.id, s.tipo);
-        b._faseAudio = fase; b._cuadroAudio = ahora;
-      };
-      emitir(faseAntes, tiempoAntes);
-      if (b.fase !== faseAntes && !b.muerta) emitir(b.fase, 0);
+      this.emitirAudioBala(b, faseAntes, tiempoAntes);
+      if (b.fase !== faseAntes && !b.muerta) this.emitirAudioBala(b, b.fase, 0);
       for (const h of hijas) this.disparar(h.id, { ...h, equipo: b.equipo });
     }
+    this.balas = this.balas.filter((b) => !b.muerta);
+  }
+
+  emitirAudioBala(b, fase, tiempo) {
+    const se = b.ficha.sonidos?.[fase];
+    if (!se?.sonidos || !this.alSonido) return;
+    const fps = se.fps ?? PROVISIONAL.fps, ahora = tiempo * fps;
+    const antes = b._faseAudio === fase ? b._cuadroAudio : -1;
+    const n = (this.cuadrosDe(b, fase) ?? ultimoCuadro(b.ficha.eventos?.[fase]) + 1) * fps / PROVISIONAL.fps;
+    for (const s of sonidosCruzados(se.sonidos, antes, ahora, n, fase === 'wait' &&
+      (Boolean(b.ficha.fisica) || Boolean(b.ficha.velocidad)))) this.alSonido(s.id, s.tipo);
+    b._faseAudio = fase; b._cuadroAudio = ahora;
+  }
+
+  finalizarContactos() {
+    for (const b of this.balas) if (!b.muerta && b._faseAudio !== b.fase) this.emitirAudioBala(b, b.fase, 0);
     this.balas = this.balas.filter((b) => !b.muerta);
   }
 
@@ -554,7 +620,7 @@ export class Proyectiles {
       .sort((a, b) => Math.hypot(a.x - p.x, (a.z ?? 0) - (p.z ?? 0)) - Math.hypot(b.x - p.x, (b.z ?? 0) - (p.z ?? 0)))[0];
     if (['wait', 'run', 'dead', 'hurt'].includes(p.anim.name)) this.apuntado = null;
     for (const d of eventosEntre(disparos, s.cuadro, p.frame)) {
-      const salida = puntoSalida(p, d);
+      const salida = aplicarDispersionArma(puntoSalida(p, d), p, d, this.datos.balas[d.bala]);
       if (d.tipo === 57) this.apuntado = configurarApuntado57(d, p, salida, this.apuntado);
       else {
         const nivelCarga = nivelCargaRifle(this.apuntado?.tiempoObjetivo ?? 0, {
@@ -612,11 +678,5 @@ export class Proyectiles {
   }
 }
 
-// Respaldo acotado para el tamaño del actor: el original actualiza +0x24/+0x28 desde cajas.
-function geometriaObjetivoBala(u) {
-  const cajas = (cajasDe(u) ?? []).filter((c) => c[1] === TIPO.CUERPO);
-  return { x: u.x, y: u.alt ?? u.y - (u.suelo ?? 0), z: u.z ?? 0,
-    ancho: u.anchoFisico ?? (cajas.length ? Math.max(...cajas.map((c) => c[4])) / PIXELES_POR_UNIDAD : 0),
-    alto: u.altoFisico ?? (cajas.length ? Math.max(...cajas.map((c) => c[5])) / PIXELES_POR_UNIDAD : 0),
-    profundidad: u.profundidadFisica ?? u.radio ?? 28 };
-}
+// Dimensiones +0x24/+0x28: base física o caja seleccionada por evento79.
+const geometriaObjetivoBala = geometriaActor;

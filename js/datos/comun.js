@@ -38,7 +38,7 @@ export function eventos(animaciones, attacks, solo = null) {
   for (const an of animaciones || []) {
     const name = get(an, 'f0');
     if (typeof name !== 'string' || (solo && !solo(name))) continue;
-    const golpes = [], impulsos = [], defensa = [], sonidos = [];
+    const golpes = [], impulsos = [], defensa = [], sonidos = [], geometria = [];
     const abiertos = new Map();
     for (const fr of ordenar(o(get(an, 'f3'), []), (x) => get(x, 'f0', 0))) {
       const cuadro = get(fr, 'f0', 0);
@@ -72,6 +72,8 @@ export function eventos(animaciones, attacks, solo = null) {
         } else if ([5, 65, 116].includes(t) && verdad(get(ev, 'f3'))) {
           // 5 SE; 65 voz por grupo/tipo; 116 voz sólo del activo (FUN_0082a3b4).
           sonidos.push({ cuadro, id: ev.f3, tipo: t });
+        } else if (t === 79) {
+          geometria.push({ cuadro, caja: get(ev, 'f1', 0) });
         } else if (t === 10) {
           const [vx, vy] = dosFloats(get(ev, 'f5', 0));
           impulsos.push({ cuadro, vx, vy, giro: get(ev, 'f4', 0) });
@@ -80,10 +82,11 @@ export function eventos(animaciones, attacks, solo = null) {
         }
       }
     }
-    if (golpes.length || impulsos.length || defensa.length || sonidos.length) {
+    if (golpes.length || impulsos.length || defensa.length || sonidos.length || geometria.length) {
       out[name] = { fps: get(an, 'f2', 30), golpes, impulsos };
       if (defensa.length) out[name].defensa = defensa;
       if (sonidos.length) out[name].sonidos = sonidos;
+      if (geometria.length) out[name].geometria = geometria;
     }
   }
   return out;

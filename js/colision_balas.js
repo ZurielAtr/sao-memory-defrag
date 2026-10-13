@@ -58,7 +58,8 @@ export function tocaBala(a, g, d) {
   if (!golpe) return false;
   const profundidad = g.prof == null ? Infinity : g.prof * escala(a);
   // Constructor BattleModel: radio +0xd8 = 28; puede sustituirse con un radio explícito.
-  if (Math.abs((a.z ?? 0) - (d.z ?? 0)) >= profundidad + (d.radio ?? 28) * escala(d)) return false;
+  // 0083fbb0 solo descarta cuando la distancia supera la suma; el borde también toca.
+  if (Math.abs((a.z ?? 0) - (d.z ?? 0)) > profundidad + (d.radio ?? 28) * escala(d)) return false;
   const ra = rectDe(a, golpe, ca, { escala: escala(a), suelo: altura(a) });
   const cd = cajasDe(d);
   const daX = a.anterior ? a.x - a.anterior.x : 0;
@@ -84,33 +85,40 @@ export function danioChoqueBalas(a, d, g) {
   return Math.max(0, Math.min(a.hp ?? 0, d.hp ?? 0));
 }
 
+/** Un contacto en el inventario común; no evalúa un segundo ataque del defensor. */
+export function resolverContactoBalas(a, d, g, { agotar, calcularDanio = danioChoqueBalas, alImpacto = null } = {}) {
+  const clave = `balas:${a.fase}:${g.caja}:${g.ataque}`;
+  const ya = a.golpeados?.get(clave) ?? new Set();
+  (a.golpeados ??= new Map()).set(clave, ya);
+  if (!puedenColisionarBalas(a, d, g) || ya.has(d) || !tocaBala(a, g, d)) return null;
+  ya.add(d);
+  // 00821ca0 calcula el retorno antes de que 0082209c modifique al defensor.
+  const calculado = calcularDanio(a, d, g);
+  const da = Math.max(0, typeof calculado === 'number' ? calculado : calculado?.atacante ?? 0);
+  const dd = Math.max(0, typeof calculado === 'number' ? calculado : calculado?.defensor ?? 0);
+  const hpA = a.hp, hpD = d.hp;
+  if (pierdeHP(d) && dd > 0) d.hp = Math.max(0, (d.hp ?? 0) - Math.trunc(dd));
+  if (pierdeHP(a) && da > 0) a.hp = Math.max(0, Math.trunc((a.hp ?? 0) - da));
+  if (hpD > 0 && d.hp <= 0) agotar?.(d);
+  if (hpA > 0 && a.hp <= 0) agotar?.(a);
+  const resultado = { atacante: a, defensor: d, golpe: g, danioAtacante: hpA - a.hp, danioDefensor: hpD - d.hp };
+  alImpacto?.(resultado);
+  return resultado;
+}
+
 /**
  * Resuelve ataque contra cuerpo de las balas de ambos equipos después de moverlas.
  * calcularDanio(a,d,g) puede devolver un número común o { atacante, defensor }.
  * agotar(b) conserva la transición de fase, audio y detención del motor de proyectiles.
  */
-export function resolverColisionesBalas(balas, { agotar, calcularDanio = danioChoqueBalas, alImpacto = null } = {}) {
+export function resolverColisionesBalas(balas, opciones = {}) {
   const resultados = [];
   for (const a of balas) {
     if (a.muerta || a.agotada) continue;
     for (const g of ataquesActivosBala(a)) {
-      const clave = `balas:${a.fase}:${g.caja}:${g.ataque}`;
-      const ya = a.golpeados?.get(clave) ?? new Set();
-      (a.golpeados ??= new Map()).set(clave, ya);
       for (const d of balas) {
-        if (!puedenColisionarBalas(a, d, g) || ya.has(d) || !tocaBala(a, g, d)) continue;
-        ya.add(d);
-        // 00821ca0 calcula el daño de retorno antes de 0082209c modificar HP del defensor.
-        const calculado = calcularDanio(a, d, g);
-        const da = Math.max(0, typeof calculado === 'number' ? calculado : calculado?.atacante ?? 0);
-        const dd = Math.max(0, typeof calculado === 'number' ? calculado : calculado?.defensor ?? 0);
-        const hpA = a.hp, hpD = d.hp;
-        if (pierdeHP(d) && dd > 0) d.hp = Math.max(0, (d.hp ?? 0) - Math.trunc(dd));
-        if (pierdeHP(a) && da > 0) a.hp = Math.max(0, Math.trunc((a.hp ?? 0) - da));
-        if (hpD > 0 && d.hp <= 0) agotar?.(d);
-        if (hpA > 0 && a.hp <= 0) agotar?.(a);
-        const resultado = { atacante: a, defensor: d, golpe: g, danioAtacante: hpA - a.hp, danioDefensor: hpD - d.hp };
-        resultados.push(resultado); alImpacto?.(resultado);
+        const resultado = resolverContactoBalas(a, d, g, opciones);
+        if (resultado) resultados.push(resultado);
         if (a.muerta || a.agotada) break;
       }
       if (a.muerta || a.agotada) break;

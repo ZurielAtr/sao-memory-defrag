@@ -11,7 +11,7 @@ import { ordenar } from './py.js';
 
 // Campos de enemy que usan los exportadores (misiones, IA, combate): nombre, unidad, elemento, radio, animaciones
 // con sus eventos, ranuras de ataque, traje y reducción en guardia.
-const CAMPOS_ENEMIGO = ['f0', 'f1', 'f3', 'f5', 'f9', 'f13', 'f14', 'f15', 'f27', 'f28'];
+const CAMPOS_ENEMIGO = ['f0', 'f1', 'f3', 'f5', 'f9', 'f12', 'f13', 'f14', 'f15', 'f27', 'f28'];
 
 /** Orden de os.listdir en NTFS (Windows): por nombre en mayúsculas. */
 export const ordenNTFS = (nombres) => ordenar(nombres, (n) => n.toUpperCase());

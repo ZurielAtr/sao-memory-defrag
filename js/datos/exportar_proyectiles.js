@@ -63,6 +63,13 @@ function punto(cajas, salida) {
   return out;
 }
 
+// D75: la corrección por equipment.f26 necesita el ancho y escala de la caja
+// originales, antes de caja() multiplicar f4*f6 (0082aefc).
+function cajaSalida(cajas, id) {
+  const c = cajas.find((c) => get(c, 'f0', 0) === id);
+  return c ? { ancho: get(c, 'f4', 0), factorX: get(c, 'f6', 1), angulo: get(c, 'f3', 0) } : null;
+}
+
 /** [[cuadro, evento]] de una entrada de eventos por cuadro, por cuadro. */
 function eventosDe(anim) {
   const out = [];
@@ -166,6 +173,7 @@ async function fichaBala(fuente, b, attacks, bullets, anims) {
       apuntarSuelo: verdad(get(b, 'f51')),
       seguimiento: get(b, 'f37', 0),
       hp: get(b, 'f12', 0),
+      tamano: [get(b, 'f4', 0), get(b, 'f5', 0)], // 00822b08 -> tamaño base del modelo.
       teledireccion: { giro: get(b, 'f22', 0), tolerancia: get(b, 'f23', 0), radio: get(b, 'f24', 0), tiempo: get(b, 'f25', 0) / 1000 },
       artFacing: get(b, 'f55', 2) === 1 ? -1 : 1, sinImpactoAppear: verdad(get(b, 'f56')),
       offset: ['f58', 'f59', 'f60'].map((k) => get(b, k, 0)),
@@ -205,8 +213,10 @@ export async function exportarProyectiles(fuente, salida, unidadDe, avance = nul
         const bid = ev.f3;
         if (!bullets.has(bid)) continue;
         unidad ??= await anims.de(nombreUnidad ?? null);
-        const pt = punto((unidad.get(name) ?? new Map()).get(cuadro) ?? [], get(ev, 'f1'));
+        const cajasSalida = (unidad.get(name) ?? new Map()).get(cuadro) ?? [];
+        const pt = punto(cajasSalida, get(ev, 'f1'));
         const disparo = { cuadro, tipo: ev.f2, bala: bid, salida: get(ev, 'f1'), punto: pt, f4: get(ev, 'f4') };
+        if (ev.f2 === 4) disparo.cajaSalida = cajaSalida(cajasSalida, get(ev, 'f1'));
         if (ev.f2 === 87) disparo.vec2 = vec2(get(ev, 'f5', 0));
         lista.push(disparo);
         const pendientes = [bid];

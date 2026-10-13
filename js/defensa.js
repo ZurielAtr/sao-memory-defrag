@@ -18,13 +18,13 @@
 //   2 (todo). La rotura pone ese tiempo a 0. Quien sostiene la guardia pone `u.guardiaFirme`.
 // - Profundidad (D58, FUN_0083fbb0): d = |z defensor − z atacante|; la parada automática y la parada
 //   cuentan si d ≤ attack.f8 + radio (el radio es el f4 del evento 93/54 si no es 0, si no el del
-//   defensor: character.f14 o enemy.f9); el cuerpo, si d < attack.f8 + radio. Escala de unidad 1.
+//   defensor: character.f14 o enemy.f9); el cuerpo también incluye la igualdad (D75).
 // PROVISIONAL: las listas y el modo se reinician al cambiar de animación (en el juego persisten hasta
 // otro evento); attack.f24 (rompe la guardia de golpe) sin exportar; sin
 // los estados que bajan el gasto (0x5c4; D60: ninguna pasiva usa los tipos 0x47/0x48 de la reducción, y el
 // máximo del medidor ya lleva las pasivas 0x29, pasivas.js); la z de la caja del golpe se toma
 // como 0 (lo es en el 99.6 % de las cajas).
-import { tocaCajas, golpeaCaja } from './cajas.js';
+import { tocaCajas, golpeaCaja, escalaFisica } from './cajas.js';
 import { reduccionGastoMedidor } from './buffs.js';
 
 export const MODO = { NADA: 1, TODO: 2, FRENTE: 3, ESPALDA: 4 };
@@ -102,12 +102,12 @@ export function resolverGolpe(atacante, g, defensor, { reduccion = [0, 0], suelo
   // D58: profundidad (sin attack.f8 exportado, como antes: sin comprobarla).
   const dz = Math.abs((defensor.z ?? 0) - (atacante.z ?? 0));
   const radio = defensor.radio ?? 0;
-  const alcanza = (r, estricto) => g.prof == null || (estricto ? dz < g.prof + r : dz <= g.prof + r);
+  const alcanza = (r) => g.prof == null || dz <= g.prof * escalaFisica(atacante) + r * escalaFisica(defensor);
   let auto = false;
   const toca = (ids) => choque ? choque(ids) : tocaCajas(atacante, g.caja, defensor, ids, opts);
   if (d.auto.size && alcanza(d.radioAuto || radio) && toca(d.auto) && g.parable) auto = true;
   if (d.parada.size && alcanza(d.radioParada || radio) && toca(d.parada)) return { resultado: 'parada', factor: 0 };
-  if (!alcanza(radio, true)) return { resultado: auto ? 'auto' : null, factor: 0 };
+  if (!alcanza(radio)) return { resultado: auto ? 'auto' : null, factor: 0 };
   const cuerpo = choque ? choque(null) : golpeaCaja(atacante, g.caja, defensor, opts);
   if (cuerpo === false) return { resultado: auto ? 'auto' : null, factor: 0 };
   // D61: la guardia (virtual 0x4c) solo va con los golpes de daño (attack.f2 = 1, FUN_008389ec).
