@@ -29,6 +29,7 @@ import { audio } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
 import { crearPantallaHabilidades } from './habilidades.js';
 import { sumarStatsArbol } from '../habilidades.js';
+import { clavesDisponibles, estadoMision, estadoCapitulo } from './disponibilidad_misiones.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -58,8 +59,10 @@ const estado = {
   api: null,
   cuenta: null,
   quests: [],
+  disponibles: null,
   datos: null, // web/data/interfaz.json
   indice: [], // web/data/misiones/index.json
+  indicePorId: new Map(),
   errores: 0,
 };
 window.__interfaz = estado;
@@ -72,6 +75,7 @@ async function cargarDatos() {
     leer(rutaWeb('/data/interfaz.json'), { mundos: [], capitulos: {}, misiones: {}, skills: {} }),
     leer(rutaWeb('/data/misiones/index.json'), []),
   ]);
+  estado.indicePorId = new Map(estado.indice.map(m=>[m.id,m]));
 }
 
 async function cargarCuenta() {
@@ -83,7 +87,9 @@ async function cargarCuenta() {
     await estado.api.request('user/register', { name: NOMBRE_INICIAL });
     estado.cuenta = (await estado.api.request('user/all')).data;
   }
-  estado.quests = (await estado.api.request('user/quest')).data.quests ?? [];
+  const progreso = (await estado.api.request('user/quest')).data;
+  estado.quests = progreso.quests ?? [];
+  estado.disponibles = clavesDisponibles(progreso.available);
   return estado.cuenta;
 }
 
@@ -103,6 +109,7 @@ const idsGrupo = () => [0, 1, 2].map(miembroEn).filter(Boolean).map((c) => c.cha
 // Misiones exportadas (index.json) con la dificultad elegida, opcionalmente de un capítulo.
 const misionesJugables = (capitulo = null) => estado.indice.filter((m) => m.dificultades?.[estado.dificultad]
   && (capitulo == null || infoMision(m.id)?.capitulo === capitulo));
+const consultaMision = (m) => estadoMision(m, estado.dificultad, estado.disponibles, estado.indicePorId);
 
 const fichas = new Map();
 function fichaPersonaje(id) {
@@ -315,7 +322,7 @@ async function mundo() {
 }
 
 async function capitulos() {
-  await cargarDatos();
+  await Promise.all([cargarDatos(), cargarCuenta()]);
   const caps = Object.entries(estado.datos.capitulos ?? {}).map(([id, c]) => ({ id: Number(id), ...c }))
     .filter((c) => c.mundo === estado.mundo).sort((a, b) => a.numero - b.numero);
   if (!caps.length) return mundo();
@@ -350,9 +357,9 @@ async function capitulos() {
     const hechas = todas.filter(([id]) => progresoDe(id, estado.dificultad)?.clear_count).length;
     widget.texto('text_clear_num', hechas, f);
     widget.texto('text_total_num', `/${todas.length}`, f);
-    const jugable = misionesJugables(c.id).length > 0;
-    widget.mostrar('image_unlock', !jugable, f); // sin misiones exportadas: bloqueado (PROVISIONAL)
-    if (!jugable) widget.texto('text_unlock_condition', 'Sin misiones exportadas', f);
+    const contenido = estadoCapitulo(misionesJugables(c.id), estado.dificultad, estado.disponibles, estado.indicePorId);
+    widget.mostrar('image_unlock', !contenido.disponible, f);
+    if (!contenido.disponible) widget.texto('text_unlock_condition', contenido.motivo, f);
     const lista = p.buscar('list_base');
     lista.hijos = [...lista.hijos.filter((h) => h.nombre !== 'capitulo_centro'), f];
     estado.capitulo = c.id;
@@ -380,7 +387,7 @@ const OCULTOS_MISION = ['image_intruder', 'image_gold_storage', 'image_storage_b
   'text_chapter', 'panel_trophies', 'image_rank', 'dummy_job_icon', 'text_non_level'];
 
 async function lista(capitulo = estado.capitulo) {
-  await cargarDatos();
+  await Promise.all([cargarDatos(), cargarCuenta()]);
   estado.capitulo = capitulo;
   const [bg, p, widget, vuelta] = await Promise.all([
     fondo(FONDO_MENU), Pantalla.cargar('ui/quest/quest_list_select_s.csb'),
@@ -392,11 +399,25 @@ async function lista(capitulo = estado.capitulo) {
     const it = clonar(plantilla);
     for (const n of OCULTOS_MISION) widget.mostrar(n, false, it);
     const prog = progresoDe(m.id, dif);
+    const acceso = consultaMision(m);
     widget.mostrar('image_complete', Boolean(prog?.clear_count), it);
-    widget.mostrar('image_new', !prog?.clear_count, it);
+    widget.mostrar('image_new', acceso.iniciar && !prog?.clear_count, it);
     widget.texto('text_quest_number', m.etiqueta ?? '', it);
     widget.texto('text_quest_title', m.nombre ?? '', it);
     widget.texto('text_level', m.dificultades[dif].nivelRecomendado ?? '--', it);
+    widget.mostrar('text_level', !acceso.historia, it);
+    widget.mostrar('text_enemy', !acceso.historia, it);
+    widget.mostrar('text_non_level', acceso.historia, it);
+    if (acceso.historia) widget.texto('text_non_level', 'Historia', it);
+    widget.mostrar('image_unlock', !acceso.iniciar, it);
+    if (!acceso.iniciar) {
+      widget.mostrar('basic_quest_info', false, it);
+      widget.mostrar('image_unlock_condition', false, it);
+      widget.mostrar('text_unlock_condition', false, it);
+      const lineas = acceso.motivo.match(/.{1,43}(?:\s|$)|\S+/g) ?? [acceso.motivo];
+      widget.texto('text_release_conditions', `${acceso.soportada ? 'Bloqueada' : 'Contenido pendiente'}\n${lineas.map(s=>s.trim()).join('\n')}`, it);
+      const t = widget.buscar('text_release_conditions', it); if (t) t.tamFuente = 24;
+    }
     it._mision = m;
     return it;
   });
@@ -406,7 +427,7 @@ async function lista(capitulo = estado.capitulo) {
   await p.precargar(lv);
   const capas = [bg, { pantalla: p }, { pantalla: vuelta }];
   escena('lista', capas, {
-    quest_select_button: (n) => preparacion(n._mision),
+    quest_select_button: (n) => consultaMision(n._mision).iniciar ? preparacion(n._mision) : detalle(n._mision, capas),
     button_footer_return: () => (capitulo == null ? mundo() : capitulos()),
     button_home_quest: () => mundo(),
     button_home_party: () => equipo(null),
@@ -447,7 +468,9 @@ async function detalle(m, debajo) {
     }
   }
   const r = mm?.dificultades?.[dif] ?? {};
-  const lineas = [info?.condicion ? `Condición: ${info.condicion}` : null, `Col +${r.col ?? 0}`, `EXP de jugador +${r.expJugador ?? 0}`,
+  const acceso = consultaMision(m);
+  const lineas = [acceso.iniciar ? acceso.historia ? 'Historia disponible' : 'Misión disponible' : acceso.motivo,
+    info?.condicion ? `Condición: ${info.condicion}` : null, `Col +${r.col ?? 0}`, `EXP de jugador +${r.expJugador ?? 0}`,
     `EXP de personaje +${r.expPersonaje ?? 0}`, ...(info?.descripcion ? info.descripcion.split('\n') : [])].filter(Boolean);
   const fila = (t, i) => {
     const it = clonar(molde.raiz);
@@ -470,7 +493,7 @@ async function detalle(m, debajo) {
     p.mostrar('image_tab_selected_background_1', tab === 1);
     p.mostrar('image_tab_selected_background_2', tab === 2);
   };
-  pestaña(1);
+  pestaña(acceso.iniciar ? 1 : 2);
   await p.precargar();
   // La ventana (750×1260) se dibuja centrada en el alto del diseño.
   const centrar = (b) => [b[0], b[1], b[2], b[3], b[4], b[5] + b[3] * ((DISENO.alto - p.alto) / 2)];
@@ -483,7 +506,8 @@ async function detalle(m, debajo) {
 }
 
 async function preparacion(m) {
-  await cargarDatos();
+  await Promise.all([cargarDatos(), cargarCuenta()]);
+  if (!consultaMision(m).iniciar) return lista();
   const [bg, p, vuelta] = await Promise.all([fondo(FONDO_MENU), Pantalla.cargar('ui/quest/quest_party_confirmation_s.csb'), pie()]);
   const dif = String(estado.dificultad);
   const info = infoMision(m.id);
@@ -515,10 +539,18 @@ async function preparacion(m) {
   await pintar();
   const n = Math.max(1, personajes().length);
   const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; pintar(); };
+  if (consultaMision(m).historia) {
+    p.texto('text_departures', 'Leer');
+    p.texto('text_enemy', 'Historia'); p.texto('text_level', '');
+  }
   escena('preparacion', [bg, { pantalla: p }, { pantalla: vuelta }], {
     button_arrow_1: mover(-1), button_arrow_2: mover(1),
     button_main_0: () => equipo(m),
-    button_main: () => jugar(m.id, idsGrupo()),
+    button_main: async () => {
+      await cargarCuenta();
+      if (consultaMision(m).iniciar) jugar(m.id, idsGrupo());
+      else await lista();
+    },
     button_footer_return: () => lista(),
   });
 }

@@ -30,6 +30,11 @@ subir de nivel por sí solo no las activa. **Ranuras** permite adquirir y mejora
 disponibles para ese personaje. Si hay materiales alternativos, elige uno antes de comprar.
 Las mejoras adquiridas se guardan y se aplican en combate.
 
+En la lista de misiones, los candados muestran qué misión y dificultad necesitas
+completar. Puedes tocar una misión bloqueada para consultar su detalle. Las
+misiones de diálogo aparecen como **Historia** y se abren con **Leer**; completarlas
+guarda el progreso y desbloquea la siguiente misión cuando corresponde.
+
 La asignación de habilidades a los nodos y la dirección de crecimiento de las ramas de límite
 usan reglas provisionales del servidor local. Quedan pendientes asistencia de ranuras,
 cambio de dirección de límite y compras con diamantes. Las pasivas de las piezas equipadas
@@ -42,6 +47,13 @@ se aplican con sus condiciones de combate.
 - La carga del rifle alterna ventanas de disparo normal, menor precisión y crítico. Una parada puede devolver los proyectiles que admiten reflexión.
 - C: guardia; C + Espacio: parada. X: paso atrás.
 - 1–4: skills. Q/E/R: cambiar al personaje 1/2/3.
+
+## Controles de diálogo
+
+En los diálogos, Espacio/Intro/Z completan el texto o avanzan; Log/L abre el
+registro con desplazamiento y repetición de las voces disponibles. Volver/Escape
+cierra el registro. Skip/Escape pide confirmación para saltar la historia:
+Seguir leyendo regresa y Saltar/Intro termina. Algunos efectos siguen pendientes.
 
 ## Qué contiene este repositorio
 

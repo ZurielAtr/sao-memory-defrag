@@ -15,6 +15,8 @@ const utf8 = new TextDecoder('utf-8'); // sustituye lo inválido por U+FFFD, com
 
 // Anchos de campos escalares confirmados en el binario (Ghidra), por archivo y ruta (master_data.py).
 export const ANCHOS_CONFIRMADOS = {
+  'adventure_story_content.bin':{'registro.f1.f1.f20':1,'registro.f1.f1.f21':1}, // D81: getters byte; ruta contrastada con Decoder
+  'adventure_story_effect.bin': {'registro.f1':1,'registro.f4':1}, // D81: getters de código/modo leen bytes
   'bullet.bin': {
     'registro.f24': 4, // radio de teledirección: 00821bf0 lee int32, nunca vector.
   },
@@ -28,6 +30,7 @@ export const ANCHOS_CONFIRMADOS = {
 // D79: identificadores de ranura son palabras de 32 bits (00693bd4/00693aa4).
 // Conservar el patrón binario, también cuando excede int32 con signo.
 export const TIPOS_CONFIRMADOS = {
+  'adventure_story_effect.bin': {'registro.f0':'u32','registro.f5':'f32','registro.f6':'f32'}, // D81,005db2f0
   'character_slot_skill.bin': { 'registro.f1.f3': 'u32' },
   'slot_skill.bin': { 'registro.f0': 'u32', 'registro.f1.f0': 'u32' },
 };
@@ -435,7 +438,7 @@ export class Decoder {
           v = this.decodeVector(ruta, kind, t, pos, size, depth);
         } else {
           v = this.tipos[ruta] === 'u32' ? this.u32(pos) : this.tipos[ruta] === 'i32' ? this.i32(pos)
-            : this.scalar(pos, this.widths[ruta] ?? size);
+            : this.tipos[ruta] === 'f32' ? this.dv.getFloat32(pos,true) : this.scalar(pos, this.widths[ruta] ?? size);
         }
       } catch (e) {
         if (!(e instanceof FueraDeRango) && !(e instanceof RangeError)) throw e;

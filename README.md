@@ -25,6 +25,8 @@ On the **Equipo** (Team) screen, click **Equipo** (Equipment) next to a characte
 
 In **Equipo**, click **Árbol** (Tree) to unlock nodes using the required materials and prerequisites. You can drag the tree in both directions. Character passives require purchasing their node; leveling up alone does not activate them. **Ranuras** (Slots) lets you purchase and upgrade skills available to that character. If alternative materials are offered, choose one before purchasing. Purchased upgrades are saved and apply in combat.
 
+In the quest list, locks show which quest and difficulty you need to complete. You can select a locked quest to view its details. Dialogue quests appear as **Historia** (Story) and open with **Leer** (Read); completing them saves your progress and unlocks the next quest when applicable.
+
 The assignment of skills to nodes and the growth direction of limit-break branches use provisional rules in the local server simulation. Slot assistance, changing the limit-break direction, and diamond purchases are still pending. Equipped items' passive effects apply according to their combat conditions.
 
 ## Combat controls
@@ -34,6 +36,13 @@ The assignment of skills to nodes and the growth direction of limit-break branch
 - Rifle charging cycles through normal, reduced-accuracy, and critical firing windows. A parry can reflect projectiles that support reflection.
 - C: guard; C + Space: parry. X: backstep.
 - 1–4: skills. Q/E/R: switch to character 1/2/3.
+
+## Dialogue controls
+
+During dialogue, Space/Enter/Z complete the text or advance. Log/L opens the
+scrollable dialogue log and lets you replay available voices. Back/Escape closes
+the log. Skip/Escape asks for confirmation: Keep reading returns to the dialogue;
+Skip/Enter ends it. Some dialogue effects are still pending.
 
 ## What this repository contains
 

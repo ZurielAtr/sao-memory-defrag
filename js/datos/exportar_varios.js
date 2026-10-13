@@ -6,12 +6,13 @@ import { normalHits, porId, porNivel } from './comun.js';
 import { Decoder } from './master_data.js';
 import { catalogoEquipo } from './exportar_equipo.js';
 import { catalogoHabilidades } from './exportar_habilidades.js';
+import {exportarEfectosHistoria} from './exportar_efectos_historia.js';
 
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 // ---- exportar_historias.py (D67): historias/<id>.json, historias/misiones.json, historias/posiciones.json ----
 const NOMBRES = { f2: 'linea', f5: 'nombre', f6: 'texto', f8: 'posicion', f10: 'fondo', f12: 'objeto', f14: 'still',
-  f16: 'efectoAntes', f17: 'efectoDespues', f25: 'voz', f26: 'sonido', f27: 'sonido2', f28: 'musica', f29: 'volumenMusica',
+  f16: 'efectoAntes', f17: 'efectoDespues',f20:'movimientoAntes',f21:'movimientoDespues',f24:'espera', f25: 'voz', f26: 'sonido', f27: 'sonido2', f28: 'musica', f29: 'volumenMusica',
   f30: 'musica2', f31: 'volumenMusica2' }; // f27/f30 posteriores; f31 conservado por compatibilidad, uso sin confirmar
 const DESCARTAR = ['f0', 'f1', 'f3', 'f11', 'f33'];
 const POR_DEFECTO = { f7: 1, f9: 1, f15: 1, f19: 0, f29: 10000, f31: 10000 };
@@ -30,6 +31,7 @@ async function capas(fuente, r) {
 }
 
 export async function exportarHistorias(fuente, salida) {
+  await exportarEfectosHistoria(fuente,salida);
   const imagenes = porId(await fuente.md('adventure_story_character_image'));
   const historias = new Map();
   for (const s of await fuente.md('adventure_story_content')) {

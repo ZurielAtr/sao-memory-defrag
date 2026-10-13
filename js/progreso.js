@@ -90,14 +90,19 @@ export class Progreso {
   }
 
   async empezar(misionId, dificultad) {
-    if (!this.api || !this.personaje) return;
+    if (!this.api || !this.personaje) return true; // preview/modo de prueba existente
+    this.enCurso = false;
+    this.errorInicio = null;
     try {
       // Respuesta confirmada del DummyDriver: {"data":{"diamond":{...}}}; no trae datos de la batalla.
       const party = [...new Set([this.personaje, ...this.miembros.filter(Boolean)])].map((c) => c.uid);
       await this.api.request('quest/start', { quest_id: Number(misionId), difficulty: dificultad, party });
       this.enCurso = true;
+      return true;
     } catch (e) {
-      console.warn('progreso: quest/start falló; la misión no se guarda.', e);
+      this.errorInicio = e;
+      console.warn('progreso: no se pudo iniciar la misión.', e);
+      return false;
     }
   }
 

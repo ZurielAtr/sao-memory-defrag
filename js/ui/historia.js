@@ -10,10 +10,12 @@ import { rutaWeb } from '../rutas.js';
 //
 // PROVISIONAL (sin leer en el binario): huecos 1 izquierda, 2 derecha, 3 centro y 4 sin imagen (sin f8, el 1);
 // los personajes siguen en pantalla hasta que otro ocupa su hueco o cambia el fondo; el que no habla se
-// oscurece; la ilustración va en el sitio del objeto; el texto sale a VELOCIDAD caracteres/s; sin efectos
-// (f16/f17), animaciones (f20); sin registro (button_log) ni elecciones. Audio: D69.
+// oscurece; la ilustración va en el sitio del objeto; el texto sale a VELOCIDAD caracteres/s.
+// Audio: D69. Registro y efectos confirmados: D81; elecciones y efectos restantes pendientes.
 
-import { Pantalla, baseCanvas } from './pantalla.js';
+import { Pantalla, baseCanvas, desplazarLista } from './pantalla.js';
+import {crearRegistro,crearSalto,registroVisible} from './historia_menus.js';
+import {EfectosHistoria} from './historia_efectos.js';
 import { audio, motor } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
 
@@ -25,6 +27,7 @@ const OSCURO = { r: 130, g: 130, b: 130 };
 
 let cachePosiciones = null;
 let cacheMisiones = null;
+let cacheEfectos = null;
 const json = (url) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
 
 /** Historias de una misión: [{ id, momento, escenario, zona, resumen, existe }] (adventure_quest_story). */
@@ -43,12 +46,13 @@ export class Historia {
   /** Carga la historia `id` (web/data/historias/<id>.json) y la pantalla; null si no hay datos. */
   static async cargar(id) {
     cachePosiciones ??= json(rutaWeb('/data/historias/posiciones.json'));
-    const [datos, p, posiciones] = await Promise.all([json(rutaWeb(`/data/historias/${id}.json`)), Pantalla.cargar(RUTA), cachePosiciones]);
+    cacheEfectos ??= json(rutaWeb('/data/historias/efectos.json'));
+    const [datos, p, posiciones, efectos] = await Promise.all([json(rutaWeb(`/data/historias/${id}.json`)), Pantalla.cargar(RUTA), cachePosiciones,cacheEfectos]);
     if (!datos?.lineas?.length) return null;
-    return new Historia(p, datos, posiciones ?? {});
+    return new Historia(p, datos, posiciones ?? {},efectos??{});
   }
 
-  constructor(p, datos, posiciones) {
+  constructor(p, datos, posiciones, efectos={}) {
     this.p = p;
     this.datos = datos;
     this.posiciones = posiciones;
@@ -57,7 +61,10 @@ export class Historia {
     this.texto = '';
     this.mostrado = 0; // caracteres ya escritos
     this.terminada = false;
-    this.p.mostrar('button_log', false); // PROVISIONAL: sin registro
+    this.registro = [];
+    this.modal = null;
+    this.efectos=new EfectosHistoria(efectos);
+    this.p.mostrar('button_log', true);
     this.fondo = p.buscar('background');
     this.objeto = p.buscar('item');
     for (const n of Object.values(HUECOS)) p.buscar(n).imagen = null;
@@ -77,6 +84,13 @@ export class Historia {
     this.i++;
     const ln = this.datos.lineas[this.i];
     if (!ln) { this.saltar(); return; }
+    this._preparando=true;
+    const indice=this.i,efecto=this.efectos.ejecutar(ln.entradas.map(e=>e.efectoAntes),'antes');
+    const presentar=()=>{if(!this.terminada&&this.i===indice){this._preparando=false;this.presentarLinea(ln);}};
+    if(this.efectos.ocupado)void efecto.then(presentar);else presentar();
+  }
+
+  presentarLinea(ln) {
     let habla = null;
     let still = null, objeto = null;
     for (const e of ln.entradas) {
@@ -99,9 +113,11 @@ export class Historia {
     this.hablante = habla?.hueco ?? null;
     this.p.texto('text_character_name', habla?.nombre ?? '');
     this.texto = habla?.texto ?? '';
+    if (habla?.texto != null) this.registro.push({indice:this.i,nombre:habla.nombre??'',texto:this.texto,voz:habla.voz??0});
     this.mostrado = 0;
     this.p.texto('text_talk', '');
     this.ponerPersonajes();
+    for(const e of ln.entradas)if(e.personaje)this.efectos.mover(e.posicion??1,e.movimientoAntes??e.f20??0);
     this.p.precargar().catch(() => {});
     if (!habla) this.mostrado = 0; // línea sin texto: espera el toque igual
   }
@@ -131,33 +147,45 @@ export class Historia {
 
   /** Toque / tecla: completa el texto o pasa a la línea siguiente. */
   async avanzar() {
-    if (this.terminada || this._avanzando) return;
+    if (this.terminada || this._avanzando || this._preparando || this.modal || this.efectos?.ocupado) return;
     if (this.escribiendo) this.mostrado = this.texto.length;
     else {
       this._avanzando = true;
       this.cancelarSonidoLinea();
       this.audioLinea = new AbortController();
       const signal = this.audioLinea.signal;
+      const entradas=this.datos.lineas[this.i]?.entradas??[];
+      const espera=entradas.reduce((prev,e)=>e.espera>0?e.espera:prev,0)/1000;
+      for(const e of entradas)if(e.personaje)this.efectos?.mover(e.posicion??1,e.movimientoDespues??e.f21??0);
       // FUN_005dac24: sonido/BGM posteriores; esperar al SE antes de cambiar de línea.
-      await Promise.all((this.datos.lineas[this.i]?.entradas ?? []).map(async (e) => {
+      await Promise.all([this.efectos?.esperar(espera),this.efectos?.ejecutar(entradas.map(e=>e.efectoDespues),'despues'),...entradas.map(async (e) => {
         if (e.musica2 > 0) void audio.musica(e.musica2, { volumen: (e.volumenMusica ?? 10000) / 10000 });
         if (e.sonido2 > 0) await audio.efecto(e.sonido2, { ambito: 'historia', signal, esperarFin: true });
-      }));
+      })]);
       this._avanzando = false;
-      if (!this.terminada && !signal.aborted) this.siguiente();
+      if (!this.terminada && !signal.aborted) {
+        if(this.modal)this._siguientePendiente=true;else this.siguiente();
+      }
     }
   }
 
   saltar() {
     this.terminada = true;
+    this.cerrarRegistro();
+    this.efectos?.cancelar();
     this.cancelarSonidoLinea();
     this._fin?.(); // termina ya (sin esperar al siguiente cuadro, que no llega con la pestaña oculta)
   }
 
   actualizar(dt) {
-    if (this.escribiendo) this.mostrado = Math.min(this.texto.length, this.mostrado + VELOCIDAD * dt);
+    if(this.modal)return;
+    this.efectos?.actualizar(dt);
+    for(const [k,nombre] of Object.entries(HUECOS)){
+      const n=this.p.buscar(nombre);if(n?._y0!=null)n.y=n._y0+(this.huecos[k]?.personaje.dy??0)+(this.efectos?.desplazamiento(Number(k))??0);
+    }
+    if (!this._preparando&&!this.efectos?.ocupado && this.escribiendo) this.mostrado = Math.min(this.texto.length, this.mostrado + VELOCIDAD * dt);
     this.p.texto('text_talk', this.texto.slice(0, Math.floor(this.mostrado)));
-    this.p.mostrar('icon_next', !this.escribiendo);
+    this.p.mostrar('icon_next', !this.escribiendo&&!this._preparando&&!this.efectos?.ocupado&&!this._avanzando);
   }
 
   dibujar(ctx) {
@@ -167,23 +195,57 @@ export class Historia {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, c.width, c.height);
     this.p.dibujar(ctx, baseCanvas(c));
+    this.efectos?.dibujar(ctx);
+    if(this.modal){
+      ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='rgba(0,0,0,.9)';ctx.fillRect(0,0,c.width,c.height);
+      this.modal.pantalla?.dibujar(ctx,baseCanvas(c));
+    }
   }
 
   /** Botón de la pantalla bajo (x, y) del canvas (px), o null. */
   botonEn(x, y) {
-    return this.p.nodoEn(x, y, (n) => n.nombre === 'button_skip')?.nombre ?? null;
+    const p=this.modal?.pantalla??this.p;
+    return p.nodoEn(x,y,n=>['button_skip','button_log','button_close','button_ok'].includes(n.nombre)||n.nombre.startsWith('registro_voz_'))?.nombre??null;
+  }
+
+  async abrirRegistro(){
+    if(this.terminada||this.modal||this._avanzando)return;
+    const modal=this.modal={tipo:'registro',pantalla:null};this.cancelarSonidoLinea();
+    try{
+      const p=await crearRegistro(registroVisible(this.registro,this._preparando?this.i-1:this.i,this._preparando?Infinity:this.mostrado));
+      if(!this.terminada&&this.modal===modal)modal.pantalla=p;
+    }catch(err){if(this.modal===modal)this.modal=null;console.warn('registro: no se pudo abrir',err);}
+  }
+
+  cerrarRegistro(){
+    this.vozRegistro?.abort();audio.detenerVoz('registro-historia');this.modal=null;this.arrastreRegistro=null;
+    if(this._siguientePendiente){this._siguientePendiente=false;if(!this.terminada)this.siguiente();}
+  }
+
+  async confirmarSalto(){
+    if(this.terminada||this.modal)return;
+    const modal=this.modal={tipo:'salto',pantalla:null};
+    if(!this._avanzando)this.cancelarSonidoLinea();
+    try{const p=await crearSalto();if(!this.terminada&&this.modal===modal)modal.pantalla=p;}
+    catch(err){if(this.modal===modal)this.modal=null;console.warn('historia: no se pudo abrir confirmación',err);}
+  }
+
+  repetirVoz(nombre){
+    const id=this.modal?.pantalla?.buscar(nombre)?._voz;if(!(id>0))return;
+    this.vozRegistro?.abort();this.vozRegistro=new AbortController();
+    void audio.voz(id,{emisor:'registro-historia',ambito:'historia',signal:this.vozRegistro.signal});
   }
 
   /**
    * Reproduce la historia en `canvas` hasta el final (toque, Espacio, Intro o Z avanzan; Escape o «Skip» la
-   * saltan). Devuelve una promesa que se resuelve al terminar.
+   * abren la confirmación de salto). L abre el registro. Devuelve una promesa al terminar.
    */
   reproducir(canvas) {
     montarAjustes();
     this._reproduciendo = true;
     const musicaAnterior = motor.deseada;
     audio.escena(`historia:${this.datos.id}`);
-    for (const e of this.datos.lineas[this.i]?.entradas ?? []) this.sonidoEntrada(e);
+    if(!this._preparando)for (const e of this.datos.lineas[this.i]?.entradas ?? []) this.sonidoEntrada(e);
     const ctx = canvas.getContext('2d');
     return new Promise((resolver) => {
       let ultimo = performance.now();
@@ -191,14 +253,29 @@ export class Historia {
         if (ev.target.closest?.('[data-audio-ui]')) return;
         const r = canvas.getBoundingClientRect();
         const x = ((ev.clientX - r.left) * canvas.width) / r.width, y = ((ev.clientY - r.top) * canvas.height) / r.height;
-        if (this.botonEn(x, y) === 'button_skip') this.saltar();
-        else this.avanzar();
+        const boton=this.botonEn(x,y);
+        if(this.modal){
+          const lista=this.modal.pantalla?.buscar('list_view_log');
+          if(lista&&this.modal.pantalla.nodoEn(x,y,n=>n===lista)) this.arrastreRegistro={x,y,boton,desde:lista._desplaz??0,movido:false};
+          else if(boton==='button_close')this.cerrarRegistro();
+          else if(boton==='button_ok'&&this.modal.tipo==='salto')this.saltar();
+        }else if(boton==='button_skip')void this.confirmarSalto();
+        else if(boton==='button_log')void this.abrirRegistro();
+        else void this.avanzar();
         ev.stopImmediatePropagation(); // que no lo reciba el HUD de batalla
       };
       const tecla = (ev) => {
         if (ev.target.closest?.('[data-audio-ui]')) return;
-        if (['Space', 'Enter', 'KeyZ', 'NumpadEnter'].includes(ev.code)) this.avanzar();
-        else if (ev.code === 'Escape') this.saltar();
+        if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
+        if(this.modal){
+          if(ev.code==='Escape')this.cerrarRegistro();
+          else if(this.modal.tipo==='salto'&&['Enter','NumpadEnter'].includes(ev.code))this.saltar();
+          else if(['ArrowUp','ArrowDown','PageUp','PageDown'].includes(ev.code)){
+            const n=this.modal.pantalla?.buscar('list_view_log');if(n)desplazarLista(n,0,(['ArrowUp','PageUp'].includes(ev.code)?-1:1)*(ev.code.startsWith('Page')?500:100));
+          }else return;
+        }else if(ev.code==='KeyL')void this.abrirRegistro();
+        else if (['Space', 'Enter', 'KeyZ', 'NumpadEnter'].includes(ev.code)) void this.avanzar();
+        else if (ev.code === 'Escape') void this.confirmarSalto();
         else return;
         ev.preventDefault();
         ev.stopImmediatePropagation();
@@ -206,10 +283,27 @@ export class Historia {
       // En window: el canvas del HUD de batalla no recibe toques (pointer-events: none).
       addEventListener('pointerdown', toque, true);
       addEventListener('keydown', tecla, true);
+      const mover=(ev)=>{
+        const t=this.arrastreRegistro;if(!t)return;
+        const r=canvas.getBoundingClientRect(),y=(ev.clientY-r.top)*canvas.height/r.height;
+        if(Math.abs(y-t.y)>12*devicePixelRatio)t.movido=true;
+        if(t.movido){const n=this.modal?.pantalla?.buscar('list_view_log');if(n)desplazarLista(n,0,(t.y-y)/baseCanvas(canvas)[0],{y:t.desde});}
+        ev.stopImmediatePropagation();
+      };
+      const soltar=(ev)=>{const t=this.arrastreRegistro;this.arrastreRegistro=null;if(t&&!t.movido&&t.boton?.startsWith('registro_voz_'))this.repetirVoz(t.boton);if(this.modal||t)ev.stopImmediatePropagation();};
+      const cancelar=(ev)=>{this.arrastreRegistro=null;if(this.modal)ev.stopImmediatePropagation();};
+      const rueda=(ev)=>{
+        if(!this.modal)return;const n=this.modal.pantalla?.buscar('list_view_log');if(n)desplazarLista(n,0,ev.deltaY);
+        ev.preventDefault();ev.stopImmediatePropagation();
+      };
+      addEventListener('pointermove',mover,true);addEventListener('pointerup',soltar,true);addEventListener('wheel',rueda,{capture:true,passive:false});
+      addEventListener('pointercancel',cancelar,true);
       this._fin = () => {
         this._fin = null;
         removeEventListener('pointerdown', toque, true);
         removeEventListener('keydown', tecla, true);
+        removeEventListener('pointermove',mover,true);removeEventListener('pointerup',soltar,true);removeEventListener('wheel',rueda,true);
+        removeEventListener('pointercancel',cancelar,true);
         this._reproduciendo = false;
         audio.escena('fin-historia');
         if (musicaAnterior) void motor.musica(musicaAnterior.id, musicaAnterior.descriptor, musicaAnterior.opciones);

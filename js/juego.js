@@ -1932,7 +1932,9 @@ async function main() {
   buildSkillMenu(player);
   battle = new Battle(mission, protos, player, stages, proyectilesEnemigos);
   if (!TEST_MODE && params.get('historias') !== '0') historias = await historiasDeMision(mission.id ?? MISSION_ID);
-  if (!TEST_MODE) await progreso.empezar(MISSION_ID, DIFFICULTY);
+  if (!TEST_MODE && !await progreso.empezar(MISSION_ID, DIFFICULTY)) {
+    throw new Error(`No se pudo iniciar la misión: ${progreso.errorInicio?.message ?? 'vuelve a la lista de misiones'}`);
+  }
   document.getElementById('carga').remove();
   await contarHistorias(MOMENTO.antes); // diálogos antes de la batalla (y las misiones "Story")
   battle.begin();
