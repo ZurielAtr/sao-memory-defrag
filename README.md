@@ -1,58 +1,52 @@
-# SAO Memory Defrag · Port para navegador
+**English** | [Español](README.es.md)
 
-**Este proyecto se está desarrollando en su totalidad con inteligencia artificial generativa, utilizando modelos como Claude Opus 5.5 y GPT 6.1 Sol.**
+# SAO Memory Defrag · Browser Port
 
-Port no oficial hecho por fans. Está en desarrollo y todavía tiene diferencias respecto al juego original.
+**This project is being developed entirely with generative artificial intelligence, using models such as Claude Opus 5.5 and GPT 6.1 Sol.**
 
-**[Abrir el juego](https://zurielatr.github.io/sao-memory-defrag/)**
+An unofficial, fan-made port. It is under development and still differs from the original game.
 
-## Cómo jugar
+**[Play in your browser](https://zurielatr.github.io/sao-memory-defrag/)**
 
-1. Abre la página en un navegador de escritorio. Se ha probado en navegadores Chromium; la compatibilidad completa con Firefox está pendiente.
-2. Selecciona tu propia copia de la APK o del archivo `.apks` compatible (probado con SAO MD Revival).
-3. Pulsa **Importar** y espera a que termine. El proceso puede tardar varios minutos y necesita unos 4 GB libres.
-4. Pulsa **Jugar**. Activa el sonido desde el control **Sonido** si el navegador lo solicita.
+## How to play
 
-La APK se procesa en tu equipo y **no se envía al servidor**. Los recursos importados y tu partida quedan en el almacenamiento de ese navegador. No borres los datos del sitio si quieres conservarlos; puedes exportar una copia de tu partida desde la portada. Cambiar de navegador o de dispositivo requiere importar de nuevo.
+1. Open the page in a desktop browser. It has been tested in Chromium-based browsers; full Firefox compatibility is still pending.
+2. Select your own copy of a compatible APK or `.apks` file (tested with SAO MD Revival).
+3. Click **Import** and wait for it to finish. This may take several minutes and requires about 4 GB of free space.
+4. Click **Play**. Enable audio with the **Sonido** (Sound) control if your browser requires it.
 
-Se recomienda ordenador con teclado. Los controles táctiles están pendientes y no se ha validado el funcionamiento en Safari/iPhone/iPad.
+The import page opens in English by default. Use **Language** to switch between **English** and **Español**; your choice is remembered in this browser. This setting applies to the import page. In-game labels are retained below to help you find the relevant controls.
 
-En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**, **Armadura** o
-**Accesorio**. Puedes equipar o retirar piezas compatibles de tu inventario. La elección se guarda
-en la partida y sus estadísticas y pasivas se aplican en combate. Si la lista está vacía, primero
-necesitas obtener equipo en las misiones. Las mejoras y evoluciones siguen pendientes.
+Your APK is processed on your computer and **is not uploaded to a server**. Imported assets and your save stay in that browser's storage. Do not clear the site's data if you want to keep them; you can export a save backup from the landing page. Switching browsers or devices requires importing the game again.
 
-En **Equipo**, pulsa **Árbol** para desbloquear nodos con sus materiales y requisitos.
-Puedes arrastrar el árbol en ambos ejes. Las pasivas propias requieren comprar su nodo;
-subir de nivel por sí solo no las activa. **Ranuras** permite adquirir y mejorar las habilidades
-disponibles para ese personaje. Si hay materiales alternativos, elige uno antes de comprar.
-Las mejoras adquiridas se guardan y se aplican en combate.
+A computer with a keyboard is recommended. Touch controls are not available yet, and Safari/iPhone/iPad support has not been validated.
 
-La asignación de habilidades a los nodos y la dirección de crecimiento de las ramas de límite
-usan reglas provisionales del servidor local. Quedan pendientes asistencia de ranuras,
-cambio de dirección de límite y compras con diamantes. Las pasivas de las piezas equipadas
-se aplican con sus condiciones de combate.
+On the **Equipo** (Team) screen, click **Equipo** (Equipment) next to a character and choose **Arma** (Weapon), **Armadura** (Armor), or **Accesorio** (Accessory). You can equip or remove compatible items from your inventory. Your choices are saved, and their stats and passive effects apply in combat. If the list is empty, you first need to obtain equipment from quests. Equipment upgrades and evolution are still pending.
 
-## Controles de combate
+In **Equipo**, click **Árbol** (Tree) to unlock nodes using the required materials and prerequisites. You can drag the tree in both directions. Character passives require purchasing their node; leveling up alone does not activate them. **Ranuras** (Slots) lets you purchase and upgrade skills available to that character. If alternative materials are offered, choose one before purchasing. Purchased upgrades are saved and apply in combat.
 
-- Flechas o WASD: moverse.
-- Z: atacar; con rifle, sostener para apuntar y soltar para disparar. Espacio: saltar.
-- La carga del rifle alterna ventanas de disparo normal, menor precisión y crítico. Una parada puede devolver los proyectiles que admiten reflexión.
-- C: guardia; C + Espacio: parada. X: paso atrás.
-- 1–4: skills. Q/E/R: cambiar al personaje 1/2/3.
+The assignment of skills to nodes and the growth direction of limit-break branches use provisional rules in the local server simulation. Slot assistance, changing the limit-break direction, and diamond purchases are still pending. Equipped items' passive effects apply according to their combat conditions.
 
-## Qué contiene este repositorio
+## Combat controls
 
-HTML y JavaScript del port, del importador y del servidor local simulado que se ejecuta en el navegador. No contiene APK, recursos del juego, tablas generadas ni descompilaciones, y no ofrece enlaces para descargar el juego original.
+- Arrow keys or WASD: move.
+- Z: attack; with a rifle, hold to aim and release to fire. Space: jump.
+- Rifle charging cycles through normal, reduced-accuracy, and critical firing windows. A parry can reflect projectiles that support reflection.
+- C: guard; C + Space: parry. X: backstep.
+- 1–4: skills. Q/E/R: switch to character 1/2/3.
 
-La página se publica con GitHub Pages desde `main`. Para probar el código en tu equipo, sirve esta carpeta con un servidor HTTP local (por ejemplo, `python -m http.server 8000`) y abre `http://localhost:8000/`. Abrir el HTML directamente con `file://` no permite la importación.
+## What this repository contains
 
-## Estado
+HTML and JavaScript for the port, the importer, and the simulated local server that runs in your browser. It contains no APKs, game assets, generated data tables, or decompiled code, and provides no download links for the original game.
 
-Incluye importación local, misiones, combate, interfaz, diálogos, música, efectos y voces. Quedan pendientes detalles de fidelidad en combate, interfaz y audio; algunas misiones o recursos pueden no funcionar todavía. El multijugador no está implementado.
+The site is published with GitHub Pages from `main`. To try the code locally, serve this folder with a local HTTP server (for example, `python -m http.server 8000`) and open `http://localhost:8000/`. Opening the HTML directly with `file://` does not support importing.
 
-## Créditos
+## Status
 
-Sword Art Online y los recursos del juego pertenecen a sus respectivos titulares. Este proyecto no está afiliado a Bandai Namco ni a los titulares de Sword Art Online.
+Includes local importing, quests, combat, UI, dialogue, music, sound effects, and voices. Combat, UI, and audio fidelity still need work; some quests or assets may not work yet. Multiplayer is not implemented.
 
-El decodificador ADPCM se basa en [Cricket Audio](https://github.com/sjmerel/ck) y conserva su aviso de licencia zlib en `js/audio/ckb.js`. El lector de interfaz sigue el formato de [cocos2d-x](https://github.com/cocos2d/cocos2d-x), publicado bajo licencia MIT. Los archivos del juego los aporta cada jugador desde su propia copia.
+## Credits
+
+Sword Art Online and the game assets belong to their respective owners. This project is not affiliated with Bandai Namco or the owners of Sword Art Online.
+
+The ADPCM decoder is based on [Cricket Audio](https://github.com/sjmerel/ck) and retains its zlib license notice in `js/audio/ckb.js`. The UI reader follows the format used by [cocos2d-x](https://github.com/cocos2d/cocos2d-x), released under the MIT license. Each player supplies the game files from their own copy.

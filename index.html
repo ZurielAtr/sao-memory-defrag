@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SAO MD · Port no oficial</title>
+<title>SAO MD · Unofficial browser port</title>
 <style>
   :root { color-scheme: dark; --fondo: #070b14; --panel: #0e1626; --borde: #1f2d47; --texto: #d6e2f5; --suave: #8193b3;
     --acento: #4fb3ff; --peligro: #ff7a7a; --ok: #6fe3a1; }
@@ -25,6 +25,9 @@
   .principal { background: #1c4f86; border-color: #2a6db3; font-weight: 600; }
   .peligro { color: var(--peligro); }
   .fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .idiomas { display: flex; justify-content: flex-end; gap: 8px; align-items: center; margin-bottom: 16px; }
+  select { font: inherit; color: var(--texto); background: var(--panel); border: 1px solid var(--borde); border-radius: 7px; min-height: 44px; padding: 8px; }
+  :focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
   input[type=file] { color: var(--suave); max-width: 100%; }
   #progreso { margin-top: 14px; }
   .pista { height: 10px; border-radius: 5px; background: #0a1220; border: 1px solid var(--borde); overflow: hidden; }
@@ -37,51 +40,61 @@
 </head>
 <body>
 <main>
+  <div class="idiomas">
+    <label for="idioma" data-es="Idioma">Language</label>
+    <select id="idioma">
+      <option value="en" lang="en">English</option>
+      <option value="es" lang="es">Español</option>
+    </select>
+  </div>
   <h1>Sword Art Online Memory Defrag</h1>
-  <p class="sub">Port del juego para el navegador, hecho por fans.</p>
+  <p class="sub" data-es="Port del juego para el navegador, hecho por fans.">A fan-made browser port of the game.</p>
 
   <section class="aviso">
-    <p><strong>Proyecto no oficial.</strong> Lo hacen fans, sin ánimo de lucro y sin relación con Bandai Namco ni con los
+    <p data-es="&lt;strong&gt;Proyecto no oficial.&lt;/strong&gt; Lo hacen fans, sin ánimo de lucro y sin relación con Bandai Namco ni con los
       titulares de Sword Art Online. Esta página no incluye ningún archivo del juego: los recursos salen de
-      <strong>tu propia copia</strong> de la APK y se quedan en tu navegador. No se sube nada a ningún sitio.</p>
+      &lt;strong&gt;tu propia copia&lt;/strong&gt; de la APK y se quedan en tu navegador. No se sube nada a ningún sitio."><strong>Unofficial project.</strong> Made by fans, non-profit, and not affiliated with Bandai Namco or the owners of Sword Art Online. This page contains no game files: assets come from <strong>your own copy</strong> of the APK and stay in your browser. Nothing is uploaded anywhere.</p>
   </section>
 
   <section id="importado" hidden>
-    <h2>Listo para jugar</h2>
+    <h2 data-es="Listo para jugar">Ready to play</h2>
     <p id="resumen"></p>
-    <p id="persistente" class="nota" hidden>El navegador no marcó estos datos como permanentes: si se queda sin espacio
-      podría borrarlos y habría que volver a importar.</p>
+    <p id="persistente" class="nota" hidden data-es="El navegador no marcó estos datos como permanentes: si se queda sin espacio
+      podría borrarlos y habría que volver a importar.">Your browser has not marked these files as persistent. If it runs out of space, it may delete them and you will need to import them again.</p>
     <div class="fila">
-      <a class="boton principal" href="interfaz.html">Jugar</a>
-      <button id="regenerar" title="Vuelve a generar los datos del juego desde los recursos ya importados">Regenerar datos</button>
-      <button id="borrar" class="peligro">Borrar lo importado</button>
+      <a class="boton principal" href="interfaz.html" data-es="Jugar">Play</a>
+      <button id="regenerar" title="Regenerate game data from the assets already imported" data-title-es="Vuelve a generar los datos del juego desde los recursos ya importados" data-es="Regenerar datos">Regenerate data</button>
+      <button id="borrar" class="peligro" data-es="Borrar lo importado">Delete imported files</button>
     </div>
   </section>
 
   <section>
-    <h2 id="sin-importar">1. Importa tu APK</h2>
-    <p>Elige el archivo <code>saomd8.apks</code> (SAO MD Revival) o la APK del juego. El navegador lee la clave de su
-      librería, descifra los recursos y genera los datos. Tarda unos minutos y ocupa unos 4 GB en el disco.</p>
-    <p class="nota">Usa un ordenador con Chrome, Brave o Edge y unos 4 GB libres. La compatibilidad completa con Firefox y Safari está pendiente; todavía no hay controles táctiles.</p>
+    <h2 id="sin-importar" data-es="1. Importa tu APK">1. Import your APK</h2>
+    <p data-es="Elige el archivo &lt;code&gt;saomd8.apks&lt;/code&gt; (SAO MD Revival) o la APK del juego. El navegador lee la clave de su
+      librería, descifra los recursos y genera los datos. Tarda unos minutos y ocupa unos 4 GB en el disco.">Choose your <code>saomd8.apks</code> file (SAO MD Revival) or the game APK. Your browser reads the key from the game library, decrypts the assets, and generates the game data. This takes a few minutes and uses about 4 GB of disk space.</p>
+    <p class="nota" data-es="Usa un ordenador con Chrome, Brave o Edge y unos 4 GB libres. La compatibilidad completa con Firefox y Safari está pendiente; todavía no hay controles táctiles.">Use a desktop computer with Chrome, Brave, or Edge and about 4 GB of free space. Full Firefox and Safari support is still pending; touch controls are not available yet.</p>
     <p class="nota peligro" id="soporte"></p>
     <div class="fila">
-      <input type="file" id="archivo" accept=".apks,.apk" multiple>
-      <button id="importar" class="principal">Importar</button>
+      <button id="elegir-archivo" type="button" data-es="Seleccionar APK / APKS">Choose APK / APKS</button>
+      <input type="file" id="archivo" accept=".apks,.apk" multiple hidden>
+      <span id="archivos-elegidos" class="nota" aria-live="polite" data-es="Ningún archivo seleccionado">No files selected</span>
+      <button id="importar" class="principal" data-es="Importar">Import</button>
     </div>
     <div id="progreso" hidden>
       <div class="pista"><div id="barra"></div></div>
-      <div id="texto-progreso"></div>
+      <div id="texto-progreso" role="status"></div>
     </div>
-    <div id="error" hidden></div>
+    <div id="error" role="alert" hidden></div>
   </section>
 
   <section>
-    <h2>Tu partida</h2>
-    <p>La partida se guarda en este navegador. Puedes copiarla a un archivo para guardarla o pasarla a otro equipo.</p>
+    <h2 data-es="Tu partida">Your save</h2>
+    <p data-es="La partida se guarda en este navegador. Puedes copiarla a un archivo para guardarla o pasarla a otro equipo.">Your progress is saved in this browser. Export it to a file to keep a backup or transfer it to another computer.</p>
     <div class="fila">
-      <button id="exportar-partida">Exportar partida</button>
-      <label class="boton">Cargar partida<input type="file" id="cargar-partida" accept=".json" hidden></label>
-      <span id="partida-ok" class="ok" hidden>Partida cargada.</span>
+      <button id="exportar-partida" data-es="Exportar partida">Export save</button>
+      <button id="elegir-partida" type="button" data-es="Cargar partida">Load save</button>
+      <input type="file" id="cargar-partida" accept=".json" hidden>
+      <span id="partida-ok" class="ok" hidden data-es="Partida cargada.">Save loaded.</span>
     </div>
   </section>
 </main>

@@ -2,9 +2,12 @@
 // (worker trabajador.js → OPFS; sw.js sirve lo importado), regeneración de los datos y copia de la partida.
 
 import { estado as leerEstado, borrarTodo } from './opfs.js';
+import { t, texto, idioma, iniciarIdioma } from './idioma.js';
+
 import { VERSION_DATOS } from '../datos/generar.js';
 
 const $ = (id) => document.getElementById(id);
+iniciarIdioma();
 const GB = 2 ** 30;
 const fmtGB = (b) => `${(b / GB).toFixed(2)} GB`;
 const PARTIDA = 'saomd.'; // prefijo de la cuenta del servidor simulado (js/api/store.js)
@@ -18,11 +21,11 @@ addEventListener('beforeunload', (ev) => {
 /** Qué falta en este navegador para importar (lista vacía = todo bien). */
 function faltaSoporte() {
   const falta = [];
-  if (!navigator.storage?.getDirectory) falta.push('almacenamiento de archivos (OPFS)');
-  if (typeof DecompressionStream !== 'function') falta.push('descompresión (DecompressionStream)');
+  if (!navigator.storage?.getDirectory) falta.push(t('almacenamiento de archivos (OPFS)', 'file storage (OPFS)'));
+  if (typeof DecompressionStream !== 'function') falta.push(t('descompresión (DecompressionStream)', 'decompression (DecompressionStream)'));
   if (!('serviceWorker' in navigator)) falta.push('service workers');
   if (typeof Worker !== 'function') falta.push('workers');
-  if (!isSecureContext) falta.push('conexión segura (https o localhost)');
+  if (!isSecureContext) falta.push(t('conexión segura (https o localhost)', 'a secure connection (HTTPS or localhost)'));
   return falta;
 }
 
@@ -38,31 +41,34 @@ async function avisarSW() {
   reg?.active?.postMessage({ tipo: 'recargar' });
 }
 
-function barra(fraccion, texto) {
+function barra(fraccion, contenido) {
   $('progreso').hidden = false;
   $('barra').style.width = `${Math.round(fraccion * 1000) / 10}%`;
-  $('texto-progreso').textContent = texto;
+  texto('texto-progreso', contenido);
 }
 
-const FASES = {
-  examinar: [0, 0.01, 'Leyendo el archivo…'],
-  clave: [0.01, 0.03, 'Buscando la clave en la librería del juego…'],
-  recursos: [0.03, 0.72, 'Descifrando los recursos'],
-  datos: [0.72, 1, 'Generando los datos del juego'],
-};
-const PASOS = {
-  personajes: 'personajes', enemigos: 'enemigos', animaciones: 'animaciones', misiones: 'misiones', ia: 'IA de los enemigos',
-  combate: 'combate', cajas: 'cajas de colisión', proyectiles: 'proyectiles', historias: 'diálogos', interfaz: 'interfaz',
-  api: 'servidor simulado', pasivas: 'pasivas', estados: 'estados', listo: 'listo',
-};
+const fases = () => ({
+  examinar: [0, 0.01, t('Leyendo el archivo…', 'Reading the file…')],
+  clave: [0.01, 0.03, t('Buscando la clave en la librería del juego…', 'Finding the key in the game library…')],
+  recursos: [0.03, 0.72, t('Descifrando los recursos', 'Decrypting assets')],
+  datos: [0.72, 1, t('Generando los datos del juego', 'Generating game data')],
+});
+const pasos = () => ({
+  personajes: t('personajes', 'characters'), enemigos: t('enemigos', 'enemies'), animaciones: t('animaciones', 'animations'), misiones: t('misiones', 'quests'), ia: t('IA de los enemigos', 'enemy AI'),
+  combate: t('combate', 'combat'), cajas: t('cajas de colisión', 'hitboxes'), proyectiles: t('proyectiles', 'projectiles'), historias: t('diálogos', 'dialogue'), interfaz: t('interfaz', 'interface'),
+  api: t('servidor simulado', 'simulated server'), pasivas: t('pasivas', 'passives'), estados: t('estados', 'status effects'), listo: t('listo', 'done'),
+});
 
 function mostrarAvance(m, soloDatos) {
-  let [a, b, texto] = FASES[m.fase] ?? [0, 1, m.fase];
+  let [a, b] = fases()[m.fase] ?? [0, 1];
   if (soloDatos) [a, b] = [0, 1];
-  let extra = '';
-  if (m.fase === 'recursos' && m.archivos) extra = `: ${m.archivos.toLocaleString('es')} archivos`;
-  if (m.fase === 'datos' && m.detalle) extra = `: ${PASOS[m.detalle] ?? m.detalle}`;
-  barra(a + (b - a) * (m.fraccion ?? 0), `${texto}${extra} (${Math.floor((m.fraccion ?? 0) * 100)} %)`);
+  barra(a + (b - a) * (m.fraccion ?? 0), () => {
+    const descripcion = fases()[m.fase]?.[2] ?? m.fase;
+    let extra = '';
+    if (m.fase === 'recursos' && m.archivos) extra = `: ${m.archivos.toLocaleString(idioma)} ${t('archivos', 'files')}`;
+    if (m.fase === 'datos' && m.detalle) extra = `: ${pasos()[m.detalle] ?? m.detalle}`;
+    return `${descripcion}${extra} (${Math.floor((m.fraccion ?? 0) * 100)} %)`;
+  });
 }
 
 /** Lanza el worker con un mensaje y espera a que acabe. */
@@ -84,7 +90,7 @@ function trabajar(mensaje) {
     w.onerror = (ev) => {
       trabajando = false;
       w.terminate();
-      rechazar(new Error(ev.message || 'error en el worker'));
+      rechazar(new Error(ev.message || t('error en el worker', 'worker error')));
     };
     w.postMessage(mensaje);
   });
@@ -92,16 +98,21 @@ function trabajar(mensaje) {
 
 function error(msg) {
   $('error').hidden = !msg;
-  $('error').textContent = msg ?? '';
+  texto('error', msg ?? '');
 }
 
 async function pintarEstado() {
   const e = navigator.storage?.getDirectory ? await leerEstado().catch(() => null) : null;
-  $('sin-importar').textContent = e ? 'Volver a importar' : '1. Importa tu APK';
+  texto('sin-importar', () => e ? t('Volver a importar', 'Import again') : t('1. Importa tu APK', '1. Import your APK'));
   $('importado').hidden = !e;
   if (e) {
-    const f = new Date(e.fecha).toLocaleString('es');
-    $('resumen').textContent = `Importado el ${f}: ${e.archivos.toLocaleString('es')} archivos (${fmtGB(e.bytes)}) de ${e.fuentes.map((x) => x.nombre).join(', ')}.`;
+    texto('resumen', () => {
+      const f = new Date(e.fecha).toLocaleString(idioma);
+      const n = e.archivos.toLocaleString(idioma);
+      const fuentes = e.fuentes.map((x) => x.nombre).join(', ');
+      return t(`Importado el ${f}: ${n} archivos (${fmtGB(e.bytes)}) de ${fuentes}.`,
+        `Imported on ${f}: ${n} files (${fmtGB(e.bytes)}) from ${fuentes}.`);
+    });
   }
   const persistente = await navigator.storage?.persisted?.().catch(() => false);
   $('persistente').hidden = !e || persistente;
@@ -131,20 +142,20 @@ let forzar = false; // segundo clic tras el aviso de espacio: se intenta igual
 /** Qué hacer cuando el navegador da poco espacio a la página. */
 function pistaEspacio(persistente) {
   if (/firefox/i.test(navigator.userAgent) && !persistente) {
-    return 'Firefox limita a 2 GB las páginas sin «almacenamiento persistente»: da ese permiso a la página (en el candado de la barra de direcciones → Permisos, o aceptando el aviso que sale al importar) y vuelve a intentarlo.';
+    return t('Firefox limita a 2 GB las páginas sin «almacenamiento persistente»: da ese permiso a la página (en el candado de la barra de direcciones → Permisos, o aceptando el aviso que sale al importar) y vuelve a intentarlo.', 'Firefox limits sites without persistent storage to 2 GB. Grant this permission to the site (in the address bar lock icon → Permissions, or by accepting the prompt when importing), then try again.');
   }
   if (navigator.brave) {
-    return 'En Brave, prueba a desactivar los escudos (Shields) para esta página o usa Chrome o Edge. Si estás en una ventana privada, usa una normal.';
+    return t('En Brave, prueba a desactivar los escudos (Shields) para esta página o usa Chrome o Edge. Si estás en una ventana privada, usa una normal.', 'In Brave, try turning off Shields for this site, or use Chrome or Edge. If you are in a private window, use a regular one.');
   }
-  return 'Si estás en una ventana privada o de incógnito, usa una normal (ahí el espacio es muy pequeño). Si no, libera espacio en el disco. También puedes intentarlo igual: si no cabe, se avisa y se borra lo copiado.';
+  return t('Si estás en una ventana privada o de incógnito, usa una normal (ahí el espacio es muy pequeño). Si no, libera espacio en el disco. También puedes intentarlo igual: si no cabe, se avisa y se borra lo copiado.', 'If you are in a private or incognito window, use a regular one (private storage is very limited). Otherwise, free up disk space. You can also try importing anyway: if space runs out, you will see a warning and the incomplete import will be deleted.');
 }
 
 async function importar(archivos = [...$('archivo').files], urls = null) {
   error(null);
   if (urls) archivos = urls.map((u) => ({ size: 2.8 * GB, name: u }));
-  if (!archivos.length) return error('Elige primero el archivo .apks (o la .apk) del juego.');
+  if (!archivos.length) return error(() => t('Elige primero el archivo .apks (o la .apk) del juego.', 'Choose the game .apks (or .apk) file first.'));
   const falta = faltaSoporte();
-  if (falta.length) return error(`Este navegador no sirve para importar: falta ${falta.join(', ')}. Usa Chrome, Edge o Firefox de escritorio actualizados.`);
+  if (falta.length) return error(() => t(`Este navegador no sirve para importar: falta ${faltaSoporte().join(', ')}. Usa Chrome, Edge o Firefox de escritorio actualizados.`, `This browser cannot import files: missing ${faltaSoporte().join(', ')}. Use an up-to-date desktop version of Chrome, Edge, or Firefox.`));
   const tam = archivos.reduce((s, f) => s + f.size, 0);
   const necesario = tam * 1.4 + 0.3 * GB; // los recursos descifrados ocupan algo más que el .apks, más los datos
   // Primero el permiso de almacenamiento persistente: en Firefox, sin él, cada página tiene como mucho 2 GB.
@@ -152,24 +163,24 @@ async function importar(archivos = [...$('archivo').files], urls = null) {
   const libre = await espacioLibre();
   if (libre < necesario && !forzar) {
     forzar = true;
-    $('importar').textContent = 'Importar de todos modos';
-    return error(`El navegador solo deja usar ${fmtGB(libre)} a esta página y hacen falta unos ${fmtGB(necesario)}. ${pistaEspacio(persistente)}`);
+    texto('importar', () => t('Importar de todos modos', 'Import anyway'));
+    return error(() => t(`El navegador solo deja usar ${fmtGB(libre)} a esta página y hacen falta unos ${fmtGB(necesario)}. ${pistaEspacio(persistente)}`, `Your browser only allows ${fmtGB(libre)} for this site, but about ${fmtGB(necesario)} is needed. ${pistaEspacio(persistente)}`));
   }
   $('importar').disabled = true;
   try {
     await registrarSW();
     const { segundos } = await trabajar(urls ? { tipo: 'importar', urls } : { tipo: 'importar', archivos });
-    barra(1, `Listo en ${Math.floor(segundos / 60)} min ${segundos % 60} s.`);
+    barra(1, () => t(`Listo en ${Math.floor(segundos / 60)} min ${segundos % 60} s.`, `Done in ${Math.floor(segundos / 60)} min ${segundos % 60} s.`));
     await avisarSW();
   } catch (e) {
     if (/quota/i.test(`${e.nombre} ${e.message}`)) {
       await borrarTodo(); // lo importado a medias no sirve: se libera el espacio
-      error(`El navegador no dejó guardar más (se quedó sin espacio para esta página). ${pistaEspacio(persistente)}`);
-    } else error(`No se pudo importar: ${e.message}`);
+      error(() => t(`El navegador no dejó guardar más (se quedó sin espacio para esta página). ${pistaEspacio(persistente)}`, `Your browser could not save more files (this site ran out of storage space). ${pistaEspacio(persistente)}`));
+    } else error(() => t(`No se pudo importar: ${e.message}`, `Import failed. Technical details: ${e.message}`));
     $('progreso').hidden = true;
   } finally {
     forzar = false;
-    $('importar').textContent = 'Importar';
+    texto('importar', () => t('Importar', 'Import'));
     $('importar').disabled = false;
     await pintarEstado();
   }
@@ -180,16 +191,16 @@ async function regenerar() {
   try {
     await registrarSW();
     const { segundos } = await trabajar({ tipo: 'regenerar' });
-    barra(1, `Datos actualizados en ${segundos} s.`);
+    barra(1, () => t(`Datos actualizados en ${segundos} s.`, `Data updated in ${segundos} s.`));
     await avisarSW();
   } catch (e) {
-    error(`No se pudieron generar los datos: ${e.message}`);
+    error(() => t(`No se pudieron generar los datos: ${e.message}`, `Could not generate game data. Technical details: ${e.message}`));
   }
   await pintarEstado();
 }
 
 async function borrar() {
-  if (!confirm('¿Borrar los recursos importados de este navegador? (La partida no se borra.)')) return;
+  if (!confirm(t('¿Borrar los recursos importados de este navegador? (La partida no se borra.)', 'Delete the imported assets from this browser? (Your save will not be deleted.)'))) return;
   await borrarTodo();
   await avisarSW();
   $('progreso').hidden = true;
@@ -203,7 +214,7 @@ function exportarPartida() {
     const k = localStorage.key(i);
     if (k.startsWith(PARTIDA)) datos[k] = localStorage.getItem(k);
   }
-  if (!Object.keys(datos).length) return error('Todavía no hay partida guardada en este navegador.');
+  if (!Object.keys(datos).length) return error(() => t('Todavía no hay partida guardada en este navegador.', 'There is no save in this browser yet.'));
   const blob = new Blob([JSON.stringify({ juego: 'saomd-web', fecha: new Date().toISOString(), datos }, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -216,23 +227,31 @@ async function importarPartida(file) {
   error(null);
   try {
     const j = JSON.parse(await file.text());
-    if (j.juego !== 'saomd-web' || typeof j.datos !== 'object') throw new Error('no es una partida de este port');
-    if (!confirm('¿Reemplazar la partida de este navegador por la del archivo?')) return;
+    if (j.juego !== 'saomd-web' || typeof j.datos !== 'object') {
+      return error(() => t('No se pudo cargar la partida: no es una partida de este port.', 'Could not load the save: this is not a save from this port.'));
+    }
+    if (!confirm(t('¿Reemplazar la partida de este navegador por la del archivo?', 'Replace the save in this browser with the save from this file?'))) return;
     for (const k of Object.keys(localStorage)) if (k.startsWith(PARTIDA)) localStorage.removeItem(k);
     for (const [k, v] of Object.entries(j.datos)) if (k.startsWith(PARTIDA)) localStorage.setItem(k, String(v));
     $('partida-ok').hidden = false;
   } catch (e) {
-    error(`No se pudo cargar la partida: ${e.message}`);
+    error(() => t(`No se pudo cargar la partida: ${e.message}`, `Could not load the save. Technical details: ${e.message}`));
   }
 }
 
+$('elegir-archivo').onclick = () => $('archivo').click();
+$('elegir-partida').onclick = () => $('cargar-partida').click();
+$('archivo').onchange = () => texto('archivos-elegidos', () => {
+  const nombres = [...$('archivo').files].map((f) => f.name);
+  return nombres.length ? nombres.join(', ') : t('Ningún archivo seleccionado', 'No files selected');
+});
 $('importar').onclick = () => importar();
 $('regenerar').onclick = regenerar;
 $('borrar').onclick = borrar;
 $('exportar-partida').onclick = exportarPartida;
 $('cargar-partida').onchange = (ev) => ev.target.files[0] && importarPartida(ev.target.files[0]);
 const falta = faltaSoporte();
-if (falta.length) $('soporte').textContent = `Este navegador no puede importar: falta ${falta.join(', ')}.`;
+if (falta.length) texto('soporte', () => t(`Este navegador no puede importar: falta ${faltaSoporte().join(', ')}.`, `This browser cannot import files: missing ${faltaSoporte().join(', ')}.`));
 
 // Para las pruebas (servidor.py --apk): __portada.importar([], ['/_apk/saomd8.apks']).
 window.__portada = { importar, regenerar };
