@@ -39,6 +39,7 @@ import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.
 import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
 import {cargarPresentacionReclutamiento,controlesResultado} from './reclutamiento_animacion.js';
+import {movimientoReducido} from './animaciones.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -507,7 +508,7 @@ async function reproducirResultados(id,o,resultados){
   if(estado.presentacionGacha===animacion)estado.presentacionGacha=null;
  };
  try{
-  const preferencia=window.matchMedia?.('(prefers-reduced-motion: reduce)'),reducida=preferencia?.matches??false;
+  const reducida=movimientoReducido();
   const p=await controlesResultado(0,resultados.length);
   const catalogo=await cargarCatalogo();
   vocesGacha=resultados.map(r=>elegirVozGacha(master().personaje(r.character_id),catalogo));
@@ -521,7 +522,7 @@ async function reproducirResultados(id,o,resultados){
   const terminar=()=>{if(cambiando)return;cambiando=true;limpiar();return lista('Resultados guardados en tu partida');};
   const actualizar=t=>{
    if(!vigente()){limpiar();return;}
-   if(inicio!==null&&document.visibilityState!=='hidden')tiempo+=Math.max(0,Math.min(t-inicio,.1));inicio=t;animacion.actualizar(tiempo);if(preferencia?.matches)animacion.revelar();
+   if(inicio!==null&&document.visibilityState!=='hidden')tiempo+=Math.max(0,Math.min(t-inicio,.1));inicio=t;animacion.actualizar(tiempo);if(reducida)animacion.revelar();
    p.mostrar('lista_resultados',animacion.fase==='resultado'&&animacion.cuadro<(animacion.eventFrames.get(2)??Infinity));
    if(animacion.terminada)void terminar();
   };

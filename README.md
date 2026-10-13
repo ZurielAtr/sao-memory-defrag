@@ -44,8 +44,9 @@ scrollable dialogue log and lets you replay available voices. Back/Escape closes
 the log. When skipping is allowed, Skip/Escape shows the story summary or a
 confirmation: Keep reading returns to the dialogue; Skip/Enter ends it.
 If skipping is unavailable, Escape shows a notice. Shakes, background gamma, and
-animated opening/closing of these menus are included; they respect your system's
-reduced-motion preference. Other effects and transitions still need fidelity work.
+animated opening/closing of these menus are included. Animations (scouting and
+dialogue) play in full by default, as in the original; use **Ajustes → Animaciones**
+to reduce them or follow your system preference. Other effects and transitions still need fidelity work.
 
 ## What this repository contains
 

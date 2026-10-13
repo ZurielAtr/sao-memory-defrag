@@ -1,4 +1,5 @@
 // D81–D83: contratos en docs/dialogos-{efectos,animaciones,sacudidas,gamma-transiciones}-d*.md. Reloj RAF.
+import {movimientoReducido} from './animaciones.js';
 const FUNDIDOS = {
   2:['#000',255,0,1],3:['#000',0,255,1],4:['#fff',255,0,1],5:['#fff',0,255,1],
   6:['#000',127,0,.3],7:['#000',0,127,.3],8:['#000',255,0,1],9:['#000',0,255,1],
@@ -19,7 +20,7 @@ export function sacudida(t,amplitud,frecuencia,fase=0,amortiguar=true){
 
 /** Efectos por ID del catálogo; un código no implementado nunca inventa un fundido. */
 export class EfectosHistoria {
-  constructor(catalogo={}, {cargarAnimacion=null,reducirMovimiento=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false}={}) { this.catalogo=catalogo;this.cargarAnimacion=cargarAnimacion;this.reducirMovimiento=reducirMovimiento;this.capas=new Map();this.tareas=[];this.movimientos=new Map();this.pendientes=new Set();this.gammaFondo=1;this.sacudidaFondo=null; }
+  constructor(catalogo={}, {cargarAnimacion=null,reducirMovimiento=movimientoReducido}={}) { this.catalogo=catalogo;this.cargarAnimacion=cargarAnimacion;this.reducirMovimiento=reducirMovimiento;this.capas=new Map();this.tareas=[];this.movimientos=new Map();this.pendientes=new Set();this.gammaFondo=1;this.sacudidaFondo=null; }
   get ocupado(){return this.tareas.length>0;}
   esperar(segundos){
     if(!(segundos>0))return Promise.resolve();

@@ -1,12 +1,13 @@
 // D83: fases de BaseCommonPopupUI adaptadas a los popups recompuestos del port.
 // Ver docs/dialogos-gamma-transiciones-d83.md; no hay timelines en estos CSB.
+import {movimientoReducido} from './animaciones.js';
 const limite=t=>Math.max(0,Math.min(1,t));
 const salida=t=>1-(1-limite(t))**2;
 const propiedades=['alto','escalaX','escalaY','alpha','y','visible','cascadaAlpha'];
 const guardar=n=>Object.fromEntries(propiedades.map(k=>[k,n[k]]));
 
 export class TransicionDialogo {
-  constructor(p,{reducirMovimiento=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false}={}){
+  constructor(p,{reducirMovimiento=movimientoReducido}={}){
     this.p=p;this.reducirMovimiento=reducirMovimiento;this.estado='abriendo';this.t=0;
     this.cuerpo=p.buscar('image_body');this.cabecera=p.buscar('image_header');
     this.pie=p.buscar('image_footer')??p.buscar('image_fotter');this.contenido=p.buscar('layout_contents');

@@ -57,8 +57,9 @@ registro con desplazamiento y repetición de las voces disponibles. Volver/Escap
 cierra el registro. Cuando la historia permite saltar, Skip/Escape muestra su
 resumen o una confirmación: Seguir leyendo regresa y Saltar/Intro termina.
 Si no permite saltar, Escape muestra un aviso. Se incluyen sacudidas, gamma del
-fondo y apertura/cierre animados de estos menús; respetan la preferencia de
-movimiento reducido del sistema. La fidelidad de otros efectos y transiciones sigue pendiente.
+fondo y apertura/cierre animados de estos menús. Las animaciones (gacha y diálogos)
+son completas por defecto, como en el original; en **Ajustes → Animaciones** se pueden
+reducir o hacer que sigan la preferencia del sistema. La fidelidad de otros efectos y transiciones sigue pendiente.
 
 ## Qué contiene este repositorio
 
