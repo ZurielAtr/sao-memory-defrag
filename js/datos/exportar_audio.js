@@ -101,6 +101,7 @@ export async function exportarAudio(fuente, salida) {
   const contextos = [
     ['titulo', catalogo.musica, /(?:^|_)title(?:_|$)/i], ['home', catalogo.musica, /(?:^|_)town(?:_|$)/i],
     ['misiones', catalogo.musica, /(?:^|_)worldmap(?:_|$)/i], ['equipo', catalogo.musica, /(?:^|_)party(?:_|$)/i],
+    ['gacha', catalogo.musica, /(?:^|_)gacha_01$/i],
     ['victoria', catalogo.musica, /(?:^|_)quest_clear$/i], ['derrota', catalogo.musica, /(?:^|_)quest_gameover$/i],
     ['batalla', catalogo.musica, /(?:^|_)qst_sao(?:_|$)/i], ['jefe', catalogo.musica, /(?:^|_)boss_sao(?:_|$)/i],
     ['seleccionar', catalogo.efectos, /(?:^|_)system_click$/i], ['confirmar', catalogo.efectos, /(?:^|_)system_confirm$/i],

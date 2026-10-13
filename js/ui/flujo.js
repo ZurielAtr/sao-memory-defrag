@@ -25,7 +25,8 @@ import { crearApiLocal } from '../api/index.js';
 import { characterStats } from '../combate.js';
 import { RANURAS_EQUIPO, equipoCompatible, equipoDeCuenta, equiposDeCuenta, sumarStatsEquipo, statsEquipo } from '../equipo.js';
 import { tomarResultado } from './regreso.js';
-import { audio } from '../audio/index.js';
+import { audio, cargarCatalogo } from '../audio/index.js';
+import { elegirVozGacha, sonidosGacha } from './audio_gacha.js';
 import { montarAjustes } from '../audio/ajustes.js';
 import { crearPantallaHabilidades } from './habilidades.js';
 import { rutaRetratoEquipo } from './composicion_habilidades.js';
@@ -37,7 +38,7 @@ import {DESTINOS_FOOTER,PENDIENTES_MENU,crearMenuPrincipal,crearCiudadTown,crear
 import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.js';
 import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
-import {cargarAnimacionReclutamiento,controlesResultado} from './reclutamiento_animacion.js';
+import {cargarPresentacionReclutamiento,controlesResultado} from './reclutamiento_animacion.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -154,7 +155,7 @@ function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null
   Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas,teclado,foco:null });
   canvas.tabIndex=0;canvas.setAttribute('aria-label',`SAO MD · ${nombre}`);
   audio.escena(nombre);
-  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : ['home','town','taberna','multi','reclutamiento','animacion-reclutamiento','confirmar-reclutamiento'].includes(nombre) ? 'home' : ['upgrade','equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
+  if (!nombre.startsWith('resultado')&&nombre!=='animacion-reclutamiento') void audio.contexto(nombre === 'titulo' ? 'titulo' : ['home','town','taberna','multi','reclutamiento','confirmar-reclutamiento'].includes(nombre) ? 'home' : ['upgrade','equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
   document.title = `SAO MD · ${nombre}`;
 }
 
@@ -445,6 +446,11 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
    `★${r.rareza} · ${r.porcentaje.toFixed(3)}%`}));
  const abrir=cambios=>reclutamiento(id,{...o,...cambios,mensaje:''});
  const acciones={button_footer_return:()=>menuPrincipal('taberna','chara'),pagina_anterior:()=>abrir({pagina:Math.max(0,o.pagina-1)}),pagina_siguiente:()=>abrir({pagina:Math.min(Math.ceil(filas.length/6)-1,o.pagina+1)})};
+ if(!o.resultados&&!o.todos){
+  const banners=cat.reclutamiento().banners.filter(b=>b.disponible),i=banners.findIndex(b=>b.id===id);
+  const cambiar=delta=>reclutamiento(banners[(i+delta+banners.length)%banners.length].id,{...o,pagina:0,mensaje:''});
+  acciones.pagina_anterior=()=>cambiar(-1);acciones.pagina_siguiente=()=>cambiar(1);
+ }
  if(!o.resultados)for(const r of visibles)acciones['pieza_'+r.id]=()=>avisoPrincipal(nombrePersonaje(r.id),
   `Probabilidad individual: ${r.porcentaje.toFixed(6)}%.\nRareza: ${r.rareza}.\nEl personaje se elige por sorteo dentro de este banner.\nPool: Fanadata. Tasas: reconstrucción S-argo.`);
  const detalle=o.resultados?`Resultados guardados · ${b.nombre}\nLos repetidos se convierten en cristales.\nPuedes consultar tu colección desde la Taberna.`:
@@ -452,7 +458,7 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'},{id:'animar_sorteo',texto:'Ver animación'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
  acciones.sorteo_uno=()=>abrir({count:1});acciones.sorteo_once=()=>abrir({count:11});acciones.ver_tasas=()=>abrir({todos:!o.todos,pagina:0});acciones.volver_banner=()=>abrir({resultados:null,pagina:0});
  if(o.resultados)acciones.animar_sorteo=()=>reproducirResultados(id,o,o.resultados);
- const p=await crearPantallaOperacion({modo:'reclutamiento',resultados:Boolean(o.resultados),todos:o.todos,count:o.count,diamantes:cuenta.user.diamond,titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
+ const p=await crearPantallaOperacion({modo:'reclutamiento',arte:b.arte,resultados:Boolean(o.resultados),todos:o.todos,count:o.count,diamantes:cuenta.user.diamond,titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
   detalle,controles,confirmable:q.permitida&&!o.resultados,confirmarTexto:'Reclutar ×'+o.count,mensaje:o.mensaje});
  if(q.permitida&&!o.resultados)acciones.revisar_operacion=async()=>{
   const confirmTicket=++estado.aperturaPrincipal;
@@ -474,29 +480,60 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  escena('reclutamiento',[bg,{pantalla:p}],acciones,{teclado:true});
 }
 
-async function reproducirResultados(id,o,resultados,indice=0){
+async function reproducirResultados(id,o,resultados){
  const ticket=++estado.aperturaPrincipal;await cargarCuenta();if(ticket!==estado.aperturaPrincipal)return;
  const lista=mensaje=>reclutamiento(id,{...o,pagina:0,resultados,mensaje});
- const resultado=resultados[indice];if(!resultado)return lista('Resultados guardados en tu partida');
+ if(!resultados.length)return lista('Resultados guardados en tu partida');
+ const controlador=new AbortController();let activa=false,cambiando=false,animacion=null;
+ let vocesGacha=[];
+ const pendientes=[];
+ const vigente=()=>!controlador.signal.aborted&&ticket===estado.aperturaPrincipal;
+ const ejecutar=async e=>{
+  if(!vigente())return false;
+  if(e.tipo==='se')return audio.efecto(e.id,{signal:controlador.signal});
+  if(e.tipo==='musica')return audio.musica(e.id,{loop:true});
+  if(e.tipo==='detenerVoz'){audio.detenerVoz('gacha');return true;}
+  if(e.tipo==='voz'){
+   const catalogo=await cargarCatalogo();if(!vigente())return false;
+   const voz=vocesGacha[animacion?.indice]??elegirVozGacha(e.ficha,catalogo);
+   return voz?audio.voz(voz,{emisor:'gacha',esperarFin:true,signal:controlador.signal}):false;
+  }
+  return false;
+ };
+ const onEvento=e=>!vigente()?Promise.resolve(false):activa?ejecutar(e):new Promise(resolve=>pendientes.push({e,resolve}));
+ const limpiar=()=>{
+  controlador.abort();audio.detenerVoz('gacha');animacion?.dispose();
+  for(const p of pendientes.splice(0))p.resolve(false);
+  if(estado.presentacionGacha===animacion)estado.presentacionGacha=null;
+ };
  try{
   const preferencia=window.matchMedia?.('(prefers-reduced-motion: reduce)'),reducida=preferencia?.matches??false;
-  const [animacion,p]=await Promise.all([cargarAnimacionReclutamiento(resultado,master(),{reducida}),controlesResultado(indice,resultados.length)]);
-  if(ticket!==estado.aperturaPrincipal)return;let cambiando=false,inicio=null,tiempo=0;
+  const p=await controlesResultado(0,resultados.length);
+  const catalogo=await cargarCatalogo();
+  vocesGacha=resultados.map(r=>elegirVozGacha(master().personaje(r.character_id),catalogo));
+  animacion=await cargarPresentacionReclutamiento(resultados,master(),{reducida,banner:master().reclutamiento().banners.find(b=>b.id===id),ahora:estado.api.backend.now()/1000,onEvento});
+  if(vigente()&&audio.motor.ctx){
+   const efectos=sonidosGacha(animacion.ssbp,animacion.adjuntos.get('gate').ssbp);
+   await Promise.all([...efectos.map(id=>catalogo?.efectos?.[id]),...vocesGacha.map(id=>catalogo?.voces?.[id]),catalogo?.musica?.[1010]]
+    .filter(d=>d&&(d.ruta||d.banco)).map(d=>audio.motor.precargar(d)));
+  }
+  if(!vigente()){limpiar();return;}let inicio=null,tiempo=0;
+  const terminar=()=>{if(cambiando)return;cambiando=true;limpiar();return lista('Resultados guardados en tu partida');};
   const actualizar=t=>{
+   if(!vigente()){limpiar();return;}
    if(inicio!==null&&document.visibilityState!=='hidden')tiempo+=Math.max(0,Math.min(t-inicio,.1));inicio=t;animacion.actualizar(tiempo);if(preferencia?.matches)animacion.revelar();
-   p.texto('nombre_resultado',animacion.revelada?nombrePersonaje(resultado.character_id):'');
-   p.texto('estado_resultado',animacion.revelada?`★${master().personaje(resultado.character_id).rareza} · ${resultado.duplicate?'Repetido · +'+resultado.hacking_crystals+' cristales':'Nuevo personaje'}`:'');
-   p.texto('siguiente_resultado_texto',animacion.revelada?indice+1<resultados.length?'Siguiente':'Terminar':'Mostrar resultado');
+   p.mostrar('lista_resultados',animacion.fase==='resultado'&&animacion.cuadro<(animacion.eventFrames.get(2)??Infinity));
+   if(animacion.terminada)void terminar();
   };
-  const terminar=()=>{if(cambiando)return;cambiando=true;return lista('Resultado guardado en tu partida');};
   escena('animacion-reclutamiento',[{velo:'#000'},{animacion},{pantalla:p}],{
-   button_footer_return:terminar,lista_resultados:terminar,siguiente_resultado:()=>{
-    if(cambiando)return;if(!animacion.revelada){animacion.revelar();actualizar(inicio??0);return;}
-    cambiando=true;return indice+1<resultados.length?reproducirResultados(id,o,resultados,indice+1):lista('Resultado guardado en tu partida');
-   },
-  },{teclado:true,cada:actualizar});
+   button_footer_return:terminar,lista_resultados:()=>{animacion.saltar();void terminar();},
+   siguiente_resultado:()=>{if(cambiando)return;animacion.avanzar();if(animacion.terminada)void terminar();},
+  },{teclado:true,cada:actualizar,alTocarFondo:()=>animacion.avanzar()});
+  estado.presentacionGacha=animacion;activa=true;
+  p.mostrar('lista_resultados',animacion.fase==='resultado'&&animacion.cuadro<(animacion.eventFrames.get(2)??Infinity));
+  for(const pendiente of pendientes.splice(0))void ejecutar(pendiente.e).then(pendiente.resolve);
   estado.foco='siguiente_resultado';
- }catch(e){if(ticket===estado.aperturaPrincipal)return lista('Animación no disponible; tu sorteo ya está guardado');}
+ }catch(e){limpiar();if(ticket===estado.aperturaPrincipal)return lista('Animación no disponible; tu sorteo ya está guardado');}
 }
 
 async function mundo() {

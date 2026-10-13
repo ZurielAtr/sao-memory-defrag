@@ -11,6 +11,7 @@ import { catalogoHabilidades } from './exportar_habilidades.js';
 import {exportarEfectosHistoria} from './exportar_efectos_historia.js';
 import {metadataHistorias} from './metadata_historia.js';
 import { catalogoTown } from './exportar_town.js';
+import { presentacionPersonajeGacha } from './exportar_presentacion_gacha.js';
 
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -132,7 +133,8 @@ export async function exportarApi(fuente, salida) {
   const jobs = porId(await fuente.md('character_job'));
   for (const r of await fuente.md('character')) characters[r.f0] = { nombre: get(r, 'f2'), rareza: get(r, 'f1'), arma: get(r, 'f3'),
     subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9'), genero: get(r, 'f10', 0),
-    id: r.f0, pasivas: [...(r.f36 ?? [])], activas: [...(r.f35 ?? [])], arbol: get(r, 'f16', 0) };
+    id: r.f0, pasivas: [...(r.f36 ?? [])], activas: [...(r.f35 ?? [])], arbol: get(r, 'f16', 0),
+    reclutamiento:await presentacionPersonajeGacha(fuente,r) };
   const levels = ordenar(await fuente.md('character_level'), (r) => r.f0);
   const expLevel = levels.map((r) => get(r, 'f2', 0));
   const maxLevel = {};

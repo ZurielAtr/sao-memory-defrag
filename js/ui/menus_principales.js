@@ -2,6 +2,7 @@
 import {Pantalla,clonar,aplicar} from './pantalla.js';
 import {envolverTexto} from './historia_menus.js';
 import {imagen} from './recursos.js';
+import {montarArteGacha} from './arte_gacha.js';
 
 export const DESTINOS_FOOTER=Object.freeze({button_home_town:'town',button_home_shop:'taberna',
   button_home_blacksmith:'upgrade',button_coop_party:'multi'});
@@ -175,6 +176,9 @@ export async function crearMenuPrincipal(nombre,{cuenta,categoria='all',banners=
  const tamanos=nombre==='town'?await tamanosCiudad(town):{};
  ({town:()=>componerTown(p,w,town,tamanos),taberna:()=>componerTaberna(p,w,cuenta,categoria,banners,indice),
   upgrade:()=>componerUpgrade(p,w,cuenta),multi:()=>componerMulti(p,w)})[nombre]();
+ if(nombre==='taberna'&&await montarArteGacha(p,p.buscar('page_lottery'),p.bannerActual?.arte)){
+  p.mostrar('ofertas_taberna',false);p.mostrar('nota_taberna',false);
+ }
  await p.precargar();return p;
 }
 

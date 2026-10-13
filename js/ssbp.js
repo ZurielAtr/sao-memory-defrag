@@ -42,7 +42,7 @@ export const PART_FLAG = {
   INSTANCE_LOOP_FLG: 1 << 30,
 };
 
-export const PART_TYPE = { NULL: 0, NORMAL: 1, TEXT: 2, INSTANCE: 3 };
+export const PART_TYPE = { NULL: 0, NORMAL: 1, TEXT: 2, INSTANCE: 3, EFFECT: 4 };
 export const BLEND = { MIX: 0, MUL: 1, ADD: 2, SUB: 3 };
 
 const VERTEX_FLAG = { LT: 1, RT: 2, LB: 4, RB: 8, ONE: 16 };
@@ -65,8 +65,9 @@ class Bin {
   }
   str(ptr) {
     if (!ptr) return '';
+    if (ptr >= this.bytes.length) throw new Error('Puntero de cadena ssbp fuera del archivo');
     let end = ptr;
-    while (this.bytes[end]) end++;
+    while (end < this.bytes.length && this.bytes[end]) end++;
     return new TextDecoder().decode(this.bytes.subarray(ptr, end));
   }
 }
@@ -144,6 +145,7 @@ export function parseSSBP(buffer) {
         boundsType: b.s16(o + 10),
         blend: b.s16(o + 12),
         refName: b.str(b.u32(o + 16)),
+        effectName: b.str(b.u32(o + 20)),
       });
     }
     const anims = [];
@@ -178,18 +180,97 @@ export function parseSSBP(buffer) {
       }
       const frameOffsets = [];
       for (let f = 0; f < numFrames; f++) frameOffsets.push(b.u32(framesPtr + f * 4));
+      const userDataPtr = b.u32(o + 12);
+      const labelPtr = b.u32(o + 16);
+      const labels = [];
+      for (let l = 0; labelPtr && l < b.s16(o + 24); l++) {
+        const lp = b.u32(labelPtr + l * 4);
+        if (lp) labels.push({ name: b.str(b.u32(lp)), frameNo: b.u16(lp + 4) });
+      }
       anims.push({
         name: b.str(b.u32(o)),
         numFrames,
         fps: b.s16(o + 0x16) || 30,
         initial,
         frameOffsets,
+        userDataPtr,
+        labels,
       });
     }
     packs.push({ name: b.str(b.u32(pp)), parts, anims });
   }
 
-  return { version, cellMaps, cells, packs, _bin: b };
+  // La variante v2 del juego tiene EffectFile de 16 bytes (sin layoutScale del SDK v4).
+  const effects = [];
+  if (!v6) {
+    const effectsPtr = b.u32(24), count = b.s16(32);
+    for (let e = 0; effectsPtr && e < count; e++) {
+      const ep = effectsPtr + e * 16;
+      const nodes = [];
+      for (let n = 0; n < b.s16(ep + 10); n++) {
+        const np = b.u32(ep + 12) + n * 16;
+        const commands = [];
+        for (let c = 0; c < b.s16(np + 10); c++) {
+          const cp = b.u32(b.u32(np + 12) + c * 4);
+          commands.push(readEffectCommand(b, cp));
+        }
+        nodes.push({ index: b.s16(np), parent: b.s16(np + 2), type: b.s16(np + 4),
+          cellIndex: b.s16(np + 6), blend: b.s16(np + 8), commands });
+      }
+      effects.push({ name: b.str(b.u32(ep)), fps: b.s16(ep + 4), lockSeed: !!b.s16(ep + 6),
+        seed: b.s16(ep + 8), nodes });
+    }
+  }
+  return { version, cellMaps, cells, packs, effects, _bin: b };
+}
+
+// Comandos SS5PlayerData.h; únicamente los campos realmente presentes, sin leer el
+// comando siguiente. Los tipos desconocidos quedan identificados, no se inventa su efecto.
+const EFFECT_FIELDS = {
+  1: ['i:priority','i:maximumParticle','i:attimeCreate','i:interval','i:lifetime',
+    'f:speedMin','f:speedMax','i:lifespanMin','i:lifespanMax','f:angle','f:angleVariance'],
+  2: ['i:seed'], 3: ['i:delay'], 4: ['f:x','f:y'],
+  5: ['f:xMin','f:xMax','f:yMin','f:yMax'],
+  6: ['f:min','f:max','f:addMin','f:addMax'],
+  7: ['f:factor','f:endLife'], 8: ['f:min','f:max'], 9: ['f:min','f:max'],
+  10: ['u:min','u:max'], 11: ['u:min','u:max'], 12: ['f:start','f:end'],
+  13: ['f:xMin','f:xMax','f:yMin','f:yMax','f:factorMin','f:factorMax'],
+  14: ['f:xMin','f:xMax','f:yMin','f:yMax','f:factorMin','f:factorMax'],
+  15: ['f:x','f:y','f:power'], 16: ['f:rotation'], 17: ['i:flag'],
+};
+function readEffectCommand(b, p) {
+  const type = b.s32(p), out = { type, supported: !!EFFECT_FIELDS[type] };
+  for (const field of EFFECT_FIELDS[type] ?? []) {
+    p += 4;
+    const [kind, name] = field.split(':');
+    out[name] = kind === 'f' ? b.f32(p) : kind === 'u' ? b.u32(p) : b.s32(p);
+  }
+  return out;
+}
+
+export function decodeUserData(ssbp, pack, anim, frameNo) {
+  if (!anim.userDataPtr || frameNo < 0 || frameNo >= anim.numFrames) return [];
+  const b = ssbp._bin;
+  let p = b.u32(anim.userDataPtr + Math.floor(frameNo) * 4);
+  if (!p) return [];
+  const count = b.u16(p); p += 2;
+  const out = [];
+  const int = () => { const v = b.s32(p); p += 4; return v; };
+  for (let i = 0; i < count; i++) {
+    const flags = b.u16(p), partIndex = b.u16(p + 2); p += 4;
+    if (!pack.parts[partIndex] || flags & ~15) throw new Error('UserData ssbp inválido');
+    const data = { flags, partIndex, partName: pack.parts[partIndex].name, frameNo,
+      integer: 0, rect: null, point: null, str: '', string: '', strSize: 0 };
+    if (flags & 1) data.integer = int();
+    if (flags & 2) data.rect = [int(), int(), int(), int()];
+    if (flags & 4) data.point = [int(), int()];
+    if (flags & 8) {
+      data.strSize = b.u16(p); p += 2;
+      data.str = data.string = b.str(int());
+    }
+    out.push(data);
+  }
+  return out;
 }
 
 // Decodifica el estado de todas las partes en un cuadro. Devuelve la lista en orden de dibujo.
@@ -266,12 +347,14 @@ export function decodeFrame(ssbp, pack, anim, frameNo) {
       }
       s.color = { func: typeAndFlags & 0xff, colors };
     }
-    if (flags & F.INSTANCE_KEYFRAME) rd16();
-    if (flags & F.INSTANCE_START) rd16();
-    if (flags & F.INSTANCE_END) rd16();
-    if (flags & F.INSTANCE_SPEED) rdF();
-    if (flags & F.INSTANCE_LOOP) rd16();
-    if (flags & F.INSTANCE_LOOP_FLG) rd16();
+    s.instance = {
+      keyframe: flags & F.INSTANCE_KEYFRAME ? rd16() : 0,
+      start: flags & F.INSTANCE_START ? rd16() : 0,
+      end: flags & F.INSTANCE_END ? rd16() : null,
+      speed: flags & F.INSTANCE_SPEED ? rdF() : 1,
+      loops: flags & F.INSTANCE_LOOP ? rd16() : 1,
+      flags: flags & F.INSTANCE_LOOP_FLG ? rd16() : 0,
+    };
     out.push(s);
   }
   return out;

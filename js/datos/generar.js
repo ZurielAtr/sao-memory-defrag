@@ -13,7 +13,7 @@ import { aJSON } from './py.js';
 import { exportarAudio } from './exportar_audio.js';
 
 /** Versión del formato de los datos generados: subirla cuando cambie un exportador obliga a regenerarlos. */
-export const VERSION_DATOS = 14;
+export const VERSION_DATOS = 15;
 
 // Pasos con su peso aproximado (para la barra de progreso).
 const PASOS = [

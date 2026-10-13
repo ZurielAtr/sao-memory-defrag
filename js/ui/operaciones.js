@@ -4,6 +4,7 @@ import {textoMenu} from './menus_principales.js';
 import {envolverTexto} from './historia_menus.js';
 import {configurarPie} from './pie.js';
 import {recorrer} from './csb.js';
+import {montarArteGacha} from './arte_gacha.js';
 const cortar=(s,n=38)=>s.length>n?s.slice(0,n-1)+'…':s;
 const modoDe=o=>o.modo??(/Reclut|Banner/.test(o.titulo)?'reclutamiento':/Vender/.test(o.titulo)?'sell':/Evol/.test(o.titulo)?'evolve':/Interc/.test(o.titulo)?'exchange':'strengthen');
 export function rutaOperacion(o){
@@ -115,7 +116,7 @@ function componerReclutamiento(p,w,o){
   lista=p.buscar('page_lottery');lista.hijos=[];
   lista.hijos.push(textoMenu('titulo_operacion',o.titulo,340,806,{ancho:630,alto:70,tam:31}),
    textoMenu('nota_arte_banner','Banner histórico · arte original no disponible',340,739,{ancho:630,alto:45,tam:22}));
-  renombrar(p,'button_left','pagina_anterior',pag>0);renombrar(p,'button_right','pagina_siguiente',pag+1<paginas);
+  renombrar(p,'button_left','pagina_anterior',true);renombrar(p,'button_right','pagina_siguiente',true);
  }else if(todos){
   p.mostrar('image_title_equipment',false);p.mostrar('button_sort',false);p.mostrar('button_draw',false);
   renombrar(p,'button_close','ver_tasas');setTexto(p,'text_close','Banner');setTexto(p,'text_select','Probabilidades individuales · S-argo');
@@ -149,7 +150,14 @@ export async function crearPantallaOperacion(o){
   Pantalla.cargar('ui/common/common_equipment_widget_s.csb'),Pantalla.cargar('ui/common/common_character_widget_s.csb'),
   Pantalla.cargar('ui/common/common_pager_s.csb'),Pantalla.cargar('ui/common/common_footer_menu_s.csb'),
   Pantalla.cargar('ui/blacksmith/blacksmith_evolution_material_s.csb'),Pantalla.cargar('ui/common/common_rarity_widget_s.csb')]);
- Object.assign(w,{equipo,personaje,pager,pie,aceptar,rareza});componerOperacion(p,w,o);await p.precargar();return p;
+ Object.assign(w,{equipo,personaje,pager,pie,aceptar,rareza});componerOperacion(p,w,o);
+ if(modoDe(o)==='reclutamiento'&&!o.resultados&&!o.todos&&o.arte){
+  const pagina=p.buscar('page_lottery'),hijos=pagina.hijos;pagina.hijos=[];
+  // Cartel original680×850: las tarjetas del pool pertenecen a la consulta de tasas.
+  if(await montarArteGacha(p,pagina,o.arte))p.mostrar('detalle_operacion',false);
+  else pagina.hijos=hijos;
+ }
+ await p.precargar();return p;
 }
 export function componerConfirmacionOperacion(p,w,titulo,detalle){
  p.mostrar('image_header_tab',false);setTexto(p,'text_title',titulo);

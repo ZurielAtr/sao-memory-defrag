@@ -19,7 +19,7 @@ La APK se procesa en tu equipo y **no se envía al servidor**. Los recursos impo
 
 Se recomienda ordenador con teclado. Los controles táctiles están pendientes y no se ha validado el funcionamiento en Safari/iPhone/iPad.
 
-En escritorio, menús, diálogos y combate se muestran centrados con el formato vertical original, a la máxima altura disponible y con márgenes oscuros a los lados. Si el ancho es insuficiente, se ajustan sin recortarse. El regreso conserva su tamaño y orientación; se han corregido solapamientos en Taberna, Herrería, Multi, Mapa y Habilidades. Esta actualización conserva los recursos importados y la partida; no requiere regenerar datos. La fidelidad completa de algunas pantallas sigue pendiente.
+En escritorio, menús, diálogos y combate se muestran centrados con el formato vertical original, a la máxima altura disponible y con márgenes oscuros a los lados. Si el ancho es insuficiente, se ajustan sin recortarse. El regreso conserva su tamaño y orientación; se han corregido solapamientos en Taberna, Herrería, Multi, Mapa y Habilidades. La actualización del catálogo conserva los recursos importados y la partida. La fidelidad completa de algunas pantallas sigue pendiente.
 
 En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**, **Armadura** o
 **Accesorio**. Puedes equipar o retirar piezas compatibles de tu inventario. La elección se guarda
@@ -75,18 +75,8 @@ y gestionar el equipo. Upgrade enlaza inventario, Equipo, Árbol y Ranuras.
 
 Taberna ofrece Start Dash, Alfheim Online Reborn y Viento como banners históricos reconstruidos. Puedes consultar probabilidades individuales y reclutar×1/×11. Grupos: [Fanadata](https://saomd.fanadata.com/banners); tasas, costes y repetidos: modelo comunitario [S-argo](https://github.com/Expugn/S-argo), identificado en pantalla. No son respuestas del servidor oficial. Los repetidos conservan al personaje y conceden cristales generales, utilizables como una alternativa de pago en las rupturas del Árbol que la ofrecen. Elige una sola fuente; no se mezclan con los materiales del inventario.
 
-Las cuentas nuevas reciben **600 diamantes para reclutar**, una cantidad provisional que puede cambiar para futuros jugadores. Las partidas existentes conservan su saldo. El sorteo se guarda antes de mostrar la animación de cada resultado; **Mostrar/Siguiente** avanza y **Ver lista/Escape** termina la secuencia. **Último sorteo → Ver animación** permite repetirla sin volver a pagar. Se respeta el movimiento reducido; algunos efectos, la introducción y el audio original de reclutamiento siguen pendientes.
+Las cuentas nuevas reciben **600 diamantes para reclutar**, una cantidad provisional que puede cambiar para futuros jugadores. Las partidas existentes conservan su saldo. El sorteo se guarda antes de la introducción y de las revelaciones individuales. Se incluyen Argo, puerta, estrellas, NEW/cristales, partículas, música, efectos y voces originales disponibles. Toca para continuar o acelerar la puerta; **Skip**, abajo a la derecha durante la puerta, o **Escape** llevan a la lista. **Último sorteo → Ver animación** repite sin pagar. El movimiento reducido muestra resultados estáticos con nombre y rareza.
 
-Falta incorporar todos los demás banners; esa ampliación queda para una etapa posterior.
+Los carteles históricos y las imágenes de introducción son recursos opcionales que pueden faltar en la APK. Si dispones de un paquete compatible, usa **Añadir recursos de gacha** en la portada después de importar la APK. Añadirlo conserva la partida. Sin esas imágenes se mantiene una vista informativa del banner. Las promociones impresas en las artes históricas no cambian las tasas comunitarias indicadas al confirmar. Esta versión actualiza automáticamente el catálogo local a v15 conservando los recursos y la cuenta. La comparación completa con Android todavía está pendiente.
 
-Upgrade permite fortalecer/evolucionar/vender/intercambiar con requisitos y guardado. Multi permite preparar el equipo local y entrar a misiones en
-solitario; buscar salas, amigos o grupos requiere un servidor que aún no está
-implementado. Town ofrece accesos locales; la ciudad animada sigue pendiente.
-
-Incluye importación local, misiones, combate, interfaz, diálogos, música, efectos y voces. Quedan pendientes detalles de fidelidad en combate, interfaz y audio; algunas misiones o recursos pueden no funcionar todavía. El multijugador no está implementado.
-
-## Créditos
-
-Sword Art Online y los recursos del juego pertenecen a sus respectivos titulares. Este proyecto no está afiliado a Bandai Namco ni a los titulares de Sword Art Online.
-
-El decodificador ADPCM se basa en [Cricket Audio](https://github.com/sjmerel/ck) y conserva su aviso de licencia zlib en `js/audio/ckb.js`. El lector de interfaz sigue el formato de [cocos2d-x](https://github.com/cocos2d/cocos2d-x), publicado bajo licencia MIT. Los archivos del juego los aporta cada jugador desde su propia copia.
+El reproductor de partículas conserva la licencia MIT de [SpriteStudio/ssbpLib](https://github.com/SpriteStudio/ssbpLib) en `js/ssbp_effects.js`.

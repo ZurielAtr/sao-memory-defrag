@@ -49,7 +49,7 @@ reduced-motion preference. Other effects and transitions still need fidelity wor
 
 ## What this repository contains
 
-On desktop, menus, dialogue and combat use the original portrait format, centered at the largest size that fits the viewport, with dark side margins. Narrow screens fit the full view without cropping. The back button keeps its original size and orientation; overlaps in the Tavern, Blacksmith, Multi, Map and Skills have been corrected. This update preserves imported resources and saves and does not require data regeneration. Full fidelity of some screens remains pending.
+On desktop, menus, dialogue and combat use the original portrait format, centered at the largest size that fits the viewport, with dark side margins. Narrow screens fit the full view without cropping. The back button keeps its original size and orientation; overlaps in the Tavern, Blacksmith, Multi, Map and Skills have been corrected. The catalog update preserves imported resources and saves. Full fidelity of some screens remains pending.
 
 HTML and JavaScript for the port, the importer, and the simulated local server that runs in your browser. It contains no APKs, game assets, generated data tables, or decompiled code, and provides no download links for the original game.
 
@@ -64,7 +64,9 @@ collection and manage equipment. Upgrade links to inventory, Team, Tree and Slot
 
 The Tavern offers reconstructed historical Start Dash, Alfheim Online Reborn and Wind banners with per-character probabilities and×1/×11 draws. Featured pools come from [Fanadata](https://saomd.fanadata.com/banners); rates, costs and duplicates use the community [S-argo](https://github.com/Expugn/S-argo) model, identified on screen. These are not official server responses. Duplicates preserve upgraded characters and grant general crystals, available as an alternative payment source on eligible Tree limit-break nodes. Choose one source; this balance is not combined with inventory materials.
 
-New accounts receive **600 recruitment diamonds**, a provisional amount that may change for future players. Existing saves keep their balance. Draws are saved before each result animation; **Mostrar/Siguiente** reveals or advances and **Ver lista/Escape** ends the sequence. **Último sorteo → Ver animación** replays it without paying again. Reduced motion is respected; some effects, the introduction and original recruitment audio remain pending.
+New accounts receive **600 diamonds for scouting**, a provisional amount that may change for future players. Existing saves keep their balance. Draws are saved before the introduction and individual reveals. The presentation includes Argo, gates, stars, NEW/crystals, particles, music, effects and available original voices. Tap to continue or speed up the gate; **Skip**, at the bottom right during the gate, or **Escape** return to the list. **Last draw → Replay animation** replays without payment. Reduced motion displays static results with names and rarity.
+
+Historical posters and introduction stills are optional resources that may be absent from the APK. If you have a compatible pack, use **Add scout resources** on the start page after importing the APK. Adding it preserves your save. Without these images, the banner keeps an informative view. Promotions printed in historical artwork do not change the community rates shown at confirmation. This version automatically updates the local catalog to v15 while preserving resources and your account. Full comparison against Android is still pending.
 
 All remaining banners still need to be added; expanding this catalog is deferred to a later stage.
 
@@ -80,3 +82,5 @@ Includes local importing, quests, combat, UI, dialogue, music, sound effects, an
 Sword Art Online and the game assets belong to their respective owners. This project is not affiliated with Bandai Namco or the owners of Sword Art Online.
 
 The ADPCM decoder is based on [Cricket Audio](https://github.com/sjmerel/ck) and retains its zlib license notice in `js/audio/ckb.js`. The UI reader follows the format used by [cocos2d-x](https://github.com/cocos2d/cocos2d-x), released under the MIT license. Each player supplies the game files from their own copy.
+
+The particle player retains the MIT license from [SpriteStudio/ssbpLib](https://github.com/SpriteStudio/ssbpLib) in `js/ssbp_effects.js`.

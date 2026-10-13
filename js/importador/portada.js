@@ -73,6 +73,7 @@ function mostrarAvance(m, soloDatos) {
 
 /** Lanza el worker con un mensaje y espera a que acabe. */
 function trabajar(mensaje) {
+  if(trabajando)return Promise.reject(new Error(t('Espera a que termine la operación actual.','Wait for the current operation to finish.')));
   return new Promise((resolver, rechazar) => {
     const w = new Worker(new URL('./trabajador.js', import.meta.url), { type: 'module' });
     const t0 = performance.now();
@@ -199,7 +200,17 @@ async function regenerar() {
   await pintarEstado();
 }
 
+async function complementarGacha(archivo){
+ if(!archivo)return;error(null);$('elegir-recursos-gacha').disabled=true;
+ try{
+  await registrarSW();await trabajar({tipo:'complementar-gacha',archivos:[archivo]});await avisarSW();
+  barra(1,()=>t('Recursos de gacha añadidos. Tu partida se conserva.','Scout resources added. Your save is preserved.'));
+ }catch(e){error(()=>t(`No se pudieron añadir los recursos: ${e.message}`,`Could not add scout resources: ${e.message}`));}
+ finally{$('elegir-recursos-gacha').disabled=false;await pintarEstado();}
+}
+
 async function borrar() {
+  if(trabajando)return error(()=>t('Espera a que termine la operación actual.','Wait for the current operation to finish.'));
   if (!confirm(t('¿Borrar los recursos importados de este navegador? (La partida no se borra.)', 'Delete the imported assets from this browser? (Your save will not be deleted.)'))) return;
   await borrarTodo();
   await avisarSW();
@@ -247,6 +258,8 @@ $('archivo').onchange = () => texto('archivos-elegidos', () => {
 });
 $('importar').onclick = () => importar();
 $('regenerar').onclick = regenerar;
+$('elegir-recursos-gacha').onclick=()=>$('recursos-gacha').click();
+$('recursos-gacha').onchange=ev=>complementarGacha(ev.target.files[0]);
 $('borrar').onclick = borrar;
 $('exportar-partida').onclick = exportarPartida;
 $('cargar-partida').onchange = (ev) => ev.target.files[0] && importarPartida(ev.target.files[0]);
@@ -254,7 +267,7 @@ const falta = faltaSoporte();
 if (falta.length) texto('soporte', () => t(`Este navegador no puede importar: falta ${faltaSoporte().join(', ')}.`, `This browser cannot import files: missing ${faltaSoporte().join(', ')}.`));
 
 // Para las pruebas (servidor.py --apk): __portada.importar([], ['/_apk/saomd8.apks']).
-window.__portada = { importar, regenerar };
+window.__portada = { importar, regenerar, complementarGacha };
 
 const e = await pintarEstado();
 if (e && ('serviceWorker' in navigator)) await registrarSW().catch(() => null);

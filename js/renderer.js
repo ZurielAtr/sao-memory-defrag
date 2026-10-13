@@ -4,6 +4,7 @@
 // color por vértice y modos de fusión por parte. Coordenadas del mundo con Y hacia arriba.
 
 import { decodeFrame, PART_FLAG, PART_TYPE, BLEND } from './ssbp.js';
+import { buildEffectQuads, effectStartFrames } from './ssbp_effects.js';
 
 export const POSITION_SCALE = 0.1; // el juego guarda posiciones en décimas de píxel
 
@@ -71,13 +72,12 @@ function localMatrix(s) {
 
 // Quads de un cuadro de animación. `textures` mapea índice de cellMap -> textura.
 // opts: x, y (posición en el mundo), scale, flipX, alpha, hidden (Set de nombres de parte).
-export function buildCharacterQuads(ssbp, textures, pack, anim, frameNo, opts = {}) {
-  const states = decodeFrame(ssbp, pack, anim, frameNo);
+export function partMatrices(ssbp, pack, anim, frameNo, opts = {}, states = decodeFrame(ssbp, pack, anim, frameNo)) {
   const byPart = new Array(pack.parts.length);
   for (const s of states) byPart[s.partIndex] = s;
 
   const sc = opts.scale ?? 1;
-  const base = [opts.flipX ? -sc : sc, 0, 0, sc, opts.x ?? 0, opts.y ?? 0];
+  const base = opts.matrix ?? [opts.flipX ? -sc : sc, 0, 0, sc, opts.x ?? 0, opts.y ?? 0];
   const mats = new Array(pack.parts.length);
   for (let i = 0; i < pack.parts.length; i++) {
     const s = byPart[i];
@@ -87,12 +87,57 @@ export function buildCharacterQuads(ssbp, textures, pack, anim, frameNo, opts = 
     mats[i] = s ? mul(parent, localMatrix(ajuste ? { ...s, rotZ: s.rotZ + ajuste } : s)) : parent;
   }
 
+  return mats;
+}
+
+export function buildCharacterQuads(ssbp, textures, pack, anim, frameNo, opts = {}) {
+  const states = decodeFrame(ssbp, pack, anim, frameNo);
+  const mats = partMatrices(ssbp, pack, anim, frameNo, opts, states);
   const globalAlpha = opts.alpha ?? 1;
   const quads = [];
   for (const s of states) {
     const part = pack.parts[s.partIndex];
-    if (part.type !== PART_TYPE.NORMAL || !s.visible || s.cellIndex < 0 || s.opacity <= 0) continue;
+    if (!s.visible || s.opacity <= 0) continue;
     if (opts.hidden?.has(part.name)) continue;
+    if (opts.attachments) quads.push(...(opts.attachments({ part, state:s, matrix:mats[s.partIndex],
+      alpha:globalAlpha * s.opacity / 255, frameNo }) ?? []));
+    if (part.type === PART_TYPE.EFFECT && (opts.effects || opts.particles)) {
+      const effect = ssbp.effects?.find(e => e.name === part.effectName);
+      if (effect) {
+        const start = effectStartFrames(ssbp, pack, anim).get(s.partIndex) ?? 0;
+        const extra = buildEffectQuads(ssbp, textures, effect, (opts.effectFrame ?? frameNo) - start,
+          { matrix: mats[s.partIndex], alpha: globalAlpha * s.opacity / 255, seed: opts.seed ?? 1, name: part.name });
+        quads.push(...extra);
+      }
+      // Permite integración de otro reproductor sin perder el orden entre partes normales.
+      if (typeof opts.effects === 'function') quads.push(...(opts.effects({ ssbp, textures, pack, anim, frameNo, part, state: s,
+        matrix: mats[s.partIndex], alpha: globalAlpha * s.opacity / 255 }) ?? []));
+      continue;
+    }
+    if (part.type === PART_TYPE.INSTANCE && opts.instances && (opts.depth ?? 0) < 8) {
+      const slash = part.refName.lastIndexOf('/');
+      const targetPack = slash < 0 ? pack : ssbp.packs.find(p => p.name === part.refName.slice(0, slash));
+      const targetAnim = targetPack?.anims.find(a => a.name === part.refName.slice(slash + 1));
+      if (targetAnim) {
+        const ref = s.instance, start = ref.start, end = ref.end ?? targetAnim.numFrames - 1;
+        const length = end - start + 1;
+        const clock = ref.flags & 8 ? opts.instanceFrame ?? opts.effectFrame ?? frameNo : frameNo;
+        let f = Math.floor((clock - ref.keyframe) * ref.speed);
+        if (f >= 0 && length > 0) {
+          const reverse = !!(ref.flags & 2), pingpong = !!(ref.flags & 4), infinite = !!(ref.flags & 1);
+          const cycles = pingpong ? length * 2 : length;
+          if (!infinite) f = Math.min(f, cycles * Math.max(1, ref.loops) - 1);
+          f %= cycles;
+          if (pingpong && f >= length) f = cycles - 1 - f;
+          if (reverse) f = length - 1 - f;
+          quads.push(...buildCharacterQuads(ssbp, textures, targetPack, targetAnim, start + f,
+            { ...opts, matrix: mats[s.partIndex], alpha: globalAlpha * s.opacity / 255,
+              effectFrame: start + f, depth: (opts.depth ?? 0) + 1 }));
+        }
+      }
+      continue;
+    }
+    if (part.type !== PART_TYPE.NORMAL || s.cellIndex < 0) continue;
     const cell = ssbp.cells[s.cellIndex];
     if (!cell) continue;
     const tex = textures.get(cell.map);

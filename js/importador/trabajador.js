@@ -10,6 +10,7 @@ import { Fuente } from '../datos/fuente.js';
 import { BlobRemoto } from './blob_remoto.js';
 import { carpeta, Escritor, Indice, almacenOPFS, leer, borrarTodo, RAIZ } from './opfs.js';
 import {actualizarImportacion} from './actualizacion.js';
+import {leerRecursosGacha} from './recursos_gacha.js';
 
 const enviar = (m) => postMessage(m);
 const hex = (b) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
@@ -73,11 +74,25 @@ async function regenerar() {
   });
 }
 
+async function complementarGacha(archivo){
+ const base=await carpeta(),estado=base&&await json(base,'estado.json'),entradas=base&&await json(base,'indice.json');
+ if(!estado||!entradas)throw Error('Importa primero la APK del juego');
+ const archivos=await leerRecursosGacha(archivo),indice=new Indice(entradas);
+ const recursos=new Escritor(await base.getDirectoryHandle('descifrado'));
+ for(let i=0;i<archivos.length;i++){
+  const r=archivos[i];await recursos.escribir(r.ruta,r.bytes);indice.agregar(r.ruta,r.bytes.length);
+  enviar({tipo:'avance',fase:'recursos',fraccion:(i+1)/archivos.length,archivos:i+1});
+ }
+ const nuevo={...estado,archivos:indice.archivos.size,bytes:[...indice.archivos.values()].reduce((n,r)=>n+r[1],0),recursosGacha:{nombre:archivo.name,archivos:archivos.length,fecha:new Date().toISOString()}};
+ const raiz=new Escritor(base);await raiz.escribir('indice.json',indice.aJSON());await raiz.escribir('estado.json',JSON.stringify(nuevo));
+ return nuevo;
+}
+
 onmessage = async (ev) => {
   try {
     let archivos = ev.data.archivos;
     if (ev.data.urls) archivos = await Promise.all(ev.data.urls.map((u) => BlobRemoto.abrir(u)));
-    const estado = ev.data.tipo === 'importar' ? await hacerImportacion(archivos) : await regenerar();
+    const estado = ev.data.tipo === 'importar' ? await hacerImportacion(archivos) : ev.data.tipo==='complementar-gacha'?await complementarGacha(archivos?.[0]):await regenerar();
     enviar({ tipo: 'listo', estado });
   } catch (e) {
     enviar({ tipo: 'error', mensaje: e?.message ?? String(e), nombre: e?.name });
