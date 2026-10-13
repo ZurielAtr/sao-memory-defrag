@@ -18,7 +18,7 @@ import { rutaWeb } from '../rutas.js';
 // transiciones.
 
 import '../importador/comprobar.js'; // D68: sin datos (página pública sin importar) manda a la portada
-import { Pantalla, baseCanvas, clonar, apilar, DISENO } from './pantalla.js';
+import { Pantalla, baseCanvas, clonar, apilar, DISENO, desplazarLista } from './pantalla.js';
 import { recorrer } from './csb.js';
 import { imagen, fuenteTTF } from './recursos.js';
 import { crearApiLocal } from '../api/index.js';
@@ -27,6 +27,8 @@ import { RANURAS_EQUIPO, equipoCompatible, equipoDeCuenta, equiposDeCuenta, suma
 import { tomarResultado } from './regreso.js';
 import { audio } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
+import { crearPantallaHabilidades } from './habilidades.js';
+import { sumarStatsArbol } from '../habilidades.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -190,7 +192,7 @@ canvas.addEventListener('pointerdown', (ev) => {
   const [x, y] = punto(ev);
   const n = nodoBajo(x, y, (z) => z.nombre in estado.acciones || z.nombre in estado.largas);
   const lista = nodoBajo(x, y, (z) => z.interior);
-  toque = { n, lista, x, y, d0: lista?._desplaz ?? 0, arrastre: false, t0: performance.now(), largo: false };
+  toque = { n, lista, x, y, d0: lista?._desplaz ?? 0, dx0: lista?._desplazX ?? 0, arrastre: false, t0: performance.now(), largo: false };
   if (n) n._pulsado = true;
   if (n && n.nombre in estado.largas) {
     const t = toque;
@@ -204,12 +206,13 @@ canvas.addEventListener('pointerdown', (ev) => {
 });
 canvas.addEventListener('pointermove', (ev) => {
   if (!toque?.lista) return;
-  const [, y] = punto(ev);
+  const [x, y] = punto(ev);
   const dy = y - toque.y;
-  if (Math.abs(dy) > 12 * devicePixelRatio) toque.arrastre = true;
+  const dx = x - toque.x, dir = toque.lista.interior?.direccion;
+  if (Math.abs(dir === 2 ? dx : dy) > 12 * devicePixelRatio || (dir === 3 && Math.abs(dx) > 12 * devicePixelRatio)) toque.arrastre = true;
   if (toque.arrastre) {
     const k = baseCanvas(canvas)[0];
-    toque.lista._desplaz = Math.max(0, Math.min(toque.lista._max ?? 0, toque.d0 + dy / k));
+    desplazarLista(toque.lista, -dx / k, dy / k, { x: toque.dx0, y: toque.d0 });
     if (toque.n) toque.n._pulsado = false;
   }
 });
@@ -229,7 +232,7 @@ canvas.addEventListener('wheel', (ev) => {
   const lista = nodoBajo(x, y, (z) => z.interior);
   if (!lista) return;
   ev.preventDefault();
-  lista._desplaz = Math.max(0, Math.min(lista._max ?? 0, (lista._desplaz ?? 0) + ev.deltaY));
+  desplazarLista(lista, lista.interior?.direccion === 2 || ev.shiftKey ? ev.deltaY : ev.deltaX, ev.shiftKey ? 0 : ev.deltaY);
 }, { passive: false });
 addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') (estado.acciones.button_next_cerrar ?? estado.acciones.button_footer_return)?.();
@@ -550,7 +553,12 @@ async function equipo(m) {
       const botonArma = widget.buscar('button_arms_edit', w);
       if (botonArma) { botonArma.visible = true; botonArma.nombre = `arma_${k}`; }
       widget.texto('text_arms_edit', 'Equipo', w);
-      const st = sumarStatsEquipo(characterStats({ personajes: { [c.character_id]: ficha } }, c.character_id, c.level),
+      for (const [nombre, etiqueta, destino] of [['ability', 'Árbol', 'habilidades'], ['slot_skill', 'Ranuras', 'ranuras']]) {
+        const b = widget.buscar(`button_${nombre}_edit`, w);
+        if (b) { b.visible = true; b.nombre = `${destino}_${k}`; }
+        widget.texto(`text_${nombre}_edit`, etiqueta, w);
+      }
+      const st = sumarStatsEquipo(sumarStatsArbol(characterStats({ personajes: { [c.character_id]: ficha } }, c.character_id, c.level), ficha, c, master().habilidades()),
         equiposDeCuenta(estado.cuenta, c, master()));
       widget.texto('text_character_name', nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, ''), w);
       widget.texto('level_number', c.level, w);
@@ -577,6 +585,8 @@ async function equipo(m) {
     button_character_list: () => listaPersonajes(m),
     button_party_edit: () => listaPersonajes(m),
     arma_0: () => listaArmas(m, 0), arma_1: () => listaArmas(m, 1), arma_2: () => listaArmas(m, 2),
+    habilidades_0: () => habilidades(m, 0), habilidades_1: () => habilidades(m, 1), habilidades_2: () => habilidades(m, 2),
+    ranuras_0: () => habilidades(m, 0, 'ranuras'), ranuras_1: () => habilidades(m, 1, 'ranuras'), ranuras_2: () => habilidades(m, 2, 'ranuras'),
     button_footer_return: () => (m ? preparacion(m) : home()),
   });
 }
@@ -587,6 +597,31 @@ const opcionesEquipo = {
   accessory: { nombre: 'Accesorio', plural: 'Accesorios', sin: 'Sin accesorio', stats: ['hp', 'mp', 'atk', 'def', 'crit'] },
 };
 const listaArmas = (m, k = 0) => listaEquipo(m, k, 'weapon');
+
+async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegido = null, mensaje = '') {
+  await cargarCuenta();
+  const c = miembroEn(k); if (!c) return equipo(m);
+  const catalogo = master(), pj = catalogo.personaje(c.character_id);
+  const [bg, vuelta] = await Promise.all([fondo(FONDO_MENU), pie()]);
+  let comprando = false;
+  const { pantalla, acciones } = await crearPantallaHabilidades({ personaje: pj, instancia: c,
+    catalogo: catalogo.habilidades(), cuenta: estado.cuenta, master: catalogo, modo, seleccionado, elegido, mensaje,
+    volver: () => equipo(m), abrir: (modo, n = null, e = null) => habilidades(m, k, modo, n, e),
+    comprar: async (modo, n, consulta, e) => {
+      if (comprando) return; comprando = true;
+      const boton = pantalla.buscar('comprar_habilidad'); if (boton) { boton.alpha = 130; boton.tactil = false; }
+      pantalla.texto('motivo_habilidad', 'Guardando mejora…');
+      try {
+        const params = modo === 'arbol' ? { character_uid: c.uid, local_node_id: n,
+          direction: consulta.direccion, choose_master_item_id: consulta.material }
+          : { character_uid: c.uid, slot: n, expected_level: consulta.nivel, choose_master_item_id: e };
+        await estado.api.request(modo === 'arbol' ? 'character/ability-board' : 'character/slot-skill', params);
+        await habilidades(m, k, modo, n, null, 'Mejora guardada');
+      } catch (err) { await habilidades(m, k, modo, n, e, err.message); }
+    },
+  });
+  escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones);
+}
 
 // D77: lista y botones originales; asignaciones/acciones son del backend local.
 async function listaEquipo(m, k = 0, ranura = 'weapon', mensaje = '') {

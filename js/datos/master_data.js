@@ -25,6 +25,13 @@ export const ANCHOS_CONFIRMADOS = {
   },
 };
 
+// D79: identificadores de ranura son palabras de 32 bits (00693bd4/00693aa4).
+// Conservar el patrón binario, también cuando excede int32 con signo.
+export const TIPOS_CONFIRMADOS = {
+  'character_slot_skill.bin': { 'registro.f1.f3': 'u32' },
+  'slot_skill.bin': { 'registro.f0': 'u32', 'registro.f1.f0': 'u32' },
+};
+
 class FueraDeRango extends Error {}
 
 const f32 = new DataView(new ArrayBuffer(4));
@@ -44,11 +51,12 @@ function bisectRight(lista, x) {
 
 export class Decoder {
   /** data: Uint8Array; clave: 4 palabras XXTEA (Uint32Array) o 16 bytes; widths: ruta → ancho confirmado. */
-  constructor(data, clave, widths = null) {
+  constructor(data, clave, widths = null, tipos = null) {
     this.d = data;
     this.dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
     this.clave = clave;
     this.widths = widths || {};
+    this.tipos = tipos || {};
     this.n = data.length;
     this.strCache = new Map();
     this.schema = new Map(); // ruta → Map(campo → tipo)
@@ -215,7 +223,7 @@ export class Decoder {
     for (const [i, lst] of slots) {
       let kind = 'scalar';
       const ruta = `${sig}.f${i}`;
-      if (this.widths[ruta] != null) {
+      if (this.widths[ruta] != null || this.tipos[ruta] != null) {
         kind = 'scalar'; // La evidencia del binario prevalece sobre la inferencia de offsets.
       } else if (gaps.get(i) > 8) {
         kind = 'struct';
@@ -426,7 +434,8 @@ export class Decoder {
         } else if (kind[0] === 'v') {
           v = this.decodeVector(ruta, kind, t, pos, size, depth);
         } else {
-          v = this.scalar(pos, this.widths[ruta] ?? size);
+          v = this.tipos[ruta] === 'u32' ? this.u32(pos) : this.tipos[ruta] === 'i32' ? this.i32(pos)
+            : this.scalar(pos, this.widths[ruta] ?? size);
         }
       } catch (e) {
         if (!(e instanceof FueraDeRango) && !(e instanceof RangeError)) throw e;
@@ -490,5 +499,5 @@ export class Decoder {
 export function convertir(datos, clave, nombre = '') {
   if (datos.length < 16) return null;
   const base = nombre.split('/').pop();
-  return new Decoder(datos, clave, ANCHOS_CONFIRMADOS[base]).records();
+  return new Decoder(datos, clave, ANCHOS_CONFIRMADOS[base], TIPOS_CONFIRMADOS[base]).records();
 }

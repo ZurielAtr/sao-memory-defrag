@@ -32,6 +32,7 @@ import { pausaDeGolpe, pausar, enPausa, descontarPausa, PAUSA_PARADA } from './i
 import { moverConVelocidad, orientar, GIRO_RAIZ } from './movimiento.js';
 import { Pasivas, cargarPasivas, TIPO } from './pasivas.js';
 import { sumarStatsEquipo, pasivasConEquipo } from './equipo.js';
+import { activasParaCombate, sumarStatsArbol } from './habilidades.js';
 import { aplicarBuff, esBuff, terminoBuff, buffsDe, pasarBuffs, TIPOS_PERSONAJE, TIPOS_ENEMIGO, STAT } from './buffs.js';
 import { iniciarMp, costeSkill, puedePagar, pagarSkill, ganarMpPorGolpe } from './mp.js';
 import { recibirGolpe, avanzarEstados, activar, activo, factorVelocidad, sinCuracion, parametro, estadosDe, ESTADO } from './estados.js';
@@ -193,7 +194,7 @@ function attackTiming(ch, name, next) {
 }
 
 // ---------- Jugador ----------
-function makePlayer(ch, skills = SKILLS_SIN_DATOS) {
+function makePlayer(ch, skills = SKILLS_SIN_DATOS, completar = true) {
   ch.y = GROUND;
   ch.alt = 0; // altura sobre el suelo (D58: el suelo depende de z)
   ch.vx = ch.vz = 0; // velocidad de la motion y del evento 10 (movimiento.js)
@@ -212,8 +213,10 @@ function makePlayer(ch, skills = SKILLS_SIN_DATOS) {
     jump_attack: attackTiming(ch, 'jump_attack', null),
   };
   const wanted = skills;
-  ch.slots = wanted.filter((s) => ch.skills.includes(s));
-  for (const s of ch.skills) if (ch.slots.length < SKILL_SLOTS && !ch.slots.includes(s)) ch.slots.push(s);
+  // Las variantes adquiridas también pueden ser animaciones dentro del paquete
+  // de la habilidad base, sin paquete propio (p. ej. skill_3310101).
+  ch.slots = completar ? wanted.filter((s) => ch.has(s)) : wanted.map((s) => s && ch.has(s) ? s : null);
+  if (completar) for (const s of ch.skills) if (ch.slots.length < SKILL_SLOTS && !ch.slots.includes(s)) ch.slots.push(s);
   ch.slots.length = Math.min(ch.slots.length, SKILL_SLOTS);
   ch.hitFrameCache = {};
   ch.play('wait', { loop: true });
@@ -1629,6 +1632,7 @@ function drawSkillBar(p, W, H) {
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   p.slots.forEach((name, i) => {
+    if (!name) return;
     const x = x0 + i * (size + gap);
     const coste = costeDe(p, name);
     const ready = puedePagar(p, coste); // D64: sin MP suficiente, apagado
@@ -1736,7 +1740,9 @@ async function cargarMiembro(id, i, combat) {
   });
   ch.armaEquipada = forzado ? null : progreso.armaDe(id);
   ch.equiposAsignados = forzado ? [] : progreso.equiposDe(id);
-  ch.stats = sumarStatsEquipo(characterStats(combat, id, progreso.nivelDe(id) ?? PLAYER_LEVEL), ch.equiposAsignados);
+  const instancia = forzado ? null : progreso.instanciaDe(id);
+  const catalogoHabilidades = progreso.api?.backend?.master?.habilidades();
+  ch.stats = sumarStatsEquipo(sumarStatsArbol(characterStats(combat, id, progreso.nivelDe(id) ?? PLAYER_LEVEL), pj, instancia, catalogoHabilidades), ch.equiposAsignados);
   ch.velBase += (ch.stats.velocidad ?? 0) / 100;
   ch.normales = combat.personajes[id].normales;
   ch.z = PLAYER_Z;
@@ -1744,18 +1750,21 @@ async function cargarMiembro(id, i, combat) {
   ch.radio = pj?.radio ?? 15; // D58: character.f14
   ch.estadosMax = forzado ? null : pj?.estadosMax ?? null; // D62: character.f34
   const pedidas = i === 0 ? params.get('skills')?.split(',').map((s) => `skill_${s.replace(/^skill_/, '')}`) : null;
-  makePlayer(ch, pedidas ?? pj?.skillsEquipadas ?? SKILLS_SIN_DATOS);
+  const activas = !forzado && instancia && pj?.activas && catalogoHabilidades?.activas
+    ? activasParaCombate(pj, instancia, catalogoHabilidades) : null;
+  if (activas) Object.assign(ch.skillData, activas.datos);
+  makePlayer(ch, pedidas ?? activas?.ranuras ?? pj?.skillsEquipadas ?? SKILLS_SIN_DATOS, !activas || Boolean(pedidas));
   ch.equipo = 1;
   ch.esPersonaje = true;
   ch.arma = pj?.arma ?? 0; // character.f3
   ch.lider = i === 0;
   // D78: f36 solo con estado de cuenta no0; f20 no exige ese desbloqueo.
-  pasivas.registrar(ch, forzado ? [] : pasivasConEquipo(pj, ch.equiposAsignados, progreso.instanciaDe(id)));
+  pasivas.registrar(ch, forzado ? [] : pasivasConEquipo(pj, ch.equiposAsignados, instancia, catalogoHabilidades));
   pasivas.aplicarAlEmpezar(ch);
   ch.mpPorGolpe = pj?.mpPorGolpe ?? 0; // D64: character.f46
   iniciarMp(ch, ch.stats.mp, pasivas); // D64: máximo con pasivas de tipo 2 y MP lleno
   // Switch: la SS1 (f45) y la SS3 (f61) de las ranuras f35 para la skill de entrada; objetivo a ≤ f49.
-  const ranura = (n) => (n ? pj?.skillsRanura?.[n - 1] ?? null : null);
+  const ranura = (n) => (n ? (activas?.ranuras ?? pj?.skillsRanura)?.[n - 1] ?? null : null);
   ch.entrada = { ss1: ranura(pj?.ss1), ss3: ranura(pj?.ss3), distancia: pj?.distanciaEntrada || DISTANCIA_ENTRADA };
   // El ID del traje (4_kirito_34001.png -> 34001) es el de su ilustración para el cut-in.
   const retrato = pj ? pj.retrato : ch.costume?.match(/_(\d+)(?:_\d+)?\.png$/)?.[1];

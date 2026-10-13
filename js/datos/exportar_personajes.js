@@ -49,7 +49,7 @@ async function portraitId(fuente, cid) {
 }
 
 /** Golpes de la skill (del 01 al primer final) y datos del Switch. */
-function skillData(mid, records, attacks) {
+export function skillData(mid, records, attacks) {
   const base = records[0];
   const hits = [];
   for (let n = 1; n < 100; n++) {
@@ -174,6 +174,8 @@ export async function exportarPersonajes(fuente, salida) {
       traje: costume,
       retrato: portrait,
       skillsEquipadas: equipped,
+      activas: [...o(get(r, 'f35'), [])],
+      arbol: get(r, 'f16', 0),
       alcanceArma: get(job, 'f5'),
       alcanceNormal: reach, // PROVISIONAL
       eventos: eventos(get(r, 'f18'), attacks),
@@ -182,7 +184,7 @@ export async function exportarPersonajes(fuente, salida) {
       radio: get(r, 'f14', 0),
       fisica: { escala: get(r, 'f37', 10000) / 10000,
         tamano: [get(unit, 'f6', 0), get(unit, 'f7', 0)] }, // 008290d8/008526a0.
-      pasivas: o(get(r, 'f36'), []).filter((i) => verdad(i)),
+      pasivas: [...o(get(r, 'f36'), [])], // D79: no comprimir huecos; ranuras reemplazan por índice.
       estadosMax: [...f34],
       velocidad: get(r, 'f11', 100) / 100,
       paso: get(r, 'f13', 0),

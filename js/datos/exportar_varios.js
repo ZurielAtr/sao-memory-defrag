@@ -5,6 +5,7 @@ import { get, o, verdad, esEntero, igual, ordenar, aJSON, aJSONIndentado } from 
 import { normalHits, porId, porNivel } from './comun.js';
 import { Decoder } from './master_data.js';
 import { catalogoEquipo } from './exportar_equipo.js';
+import { catalogoHabilidades } from './exportar_habilidades.js';
 
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -122,7 +123,8 @@ export async function exportarApi(fuente, salida) {
   const characters = {};
   const jobs = porId(await fuente.md('character_job'));
   for (const r of await fuente.md('character')) characters[r.f0] = { nombre: get(r, 'f2'), rareza: get(r, 'f1'), arma: get(r, 'f3'),
-    subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9'), genero: get(r, 'f10', 0) };
+    subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9'), genero: get(r, 'f10', 0),
+    id: r.f0, pasivas: [...(r.f36 ?? [])], activas: [...(r.f35 ?? [])], arbol: get(r, 'f16', 0) };
   const levels = ordenar(await fuente.md('character_level'), (r) => r.f0);
   const expLevel = levels.map((r) => get(r, 'f2', 0));
   const maxLevel = {};
@@ -186,6 +188,7 @@ export async function exportarApi(fuente, salida) {
   const data = {
     _nota: 'Generado por web/js/datos/exportar_varios.js (exportarApi); campos PROVISIONALES en NOTAS.md (F3).',
     personajes: characters, expNivel: expLevel, nivelMaximo: maxLevel, objetos: items, equipos: equipment,
+    habilidades: await catalogoHabilidades(fuente),
     misiones, drops, recompensas: rewards,
   };
   await salida.escribir('api_master.json', aJSON(data));

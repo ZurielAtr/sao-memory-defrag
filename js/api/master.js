@@ -14,6 +14,7 @@ export class Master {
   }
 
   personaje(id) { return this.data.personajes[id] ?? null; }
+  habilidades() { return this.data.habilidades ?? {}; }
   objeto(id) { return this.data.objetos[id] ?? null; }
   equipo(id) { return this.data.equipos[id] ?? null; }
   mision(id) { return this.data.misiones[id] ?? null; }

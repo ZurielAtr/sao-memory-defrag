@@ -1,6 +1,7 @@
 // Equipo del inventario: asignación por UID del backend local; categorías y
 // compatibilidad del filtro nativo00b6d120→007724ec→0089d72c (D78).
 import { growthCurve } from './combate.js';
+import { estadoHabilidades } from './habilidades.js';
 export const RANURAS_EQUIPO = Object.freeze({ weapon: 'weapon_uid', armor: 'armor_uid', accessory: 'accessory_uid' });
 const categorias = { weapon: 1, armor: 2, accessory: 3 };
 export function armaCompatible(personaje, arma) {
@@ -71,17 +72,10 @@ export const sumarStatsEquipo = (base, equipos = []) => equipos.reduce(sumarStat
 // D77,006954b4→00827ee4→0070507c: f20 de cada pieza, sin filtro por nivel.
 // D78: ctor00604728 inicializa estados0; JSON00693ebc/00693898 modifica
 // la primera ranura del ID. Repetir el ID sobrescribe su estado, no otra ranura.
-export function pasivasDelPersonaje(personaje, instancia) {
-  const ids = (personaje?.pasivas ?? []).slice(0, 3), estados = ids.map(() => 0);
-  for (const r of Array.isArray(instancia?.passive_skill) ? instancia.passive_skill : []) {
-    if (!Number.isSafeInteger(r?.master_passive_skill_id) || r.master_passive_skill_id <= 0
-      || !Number.isInteger(r.status) || r.status < -2147483648 || r.status > 2147483647) continue;
-    const i = ids.indexOf(r.master_passive_skill_id);
-    if (i >= 0) estados[i] = r.status;
-  }
-  return ids.filter((id, i) => id > 0 && estados[i] !== 0);
+export function pasivasDelPersonaje(personaje, instancia, catalogo) {
+  return estadoHabilidades(personaje, instancia, catalogo).pasivas.filter((p) => p.id > 0 && p.estado !== 0).map((p) => p.id);
 }
 
-export const pasivasConArma = (personaje, arma, instancia) => pasivasConEquipo(personaje, arma ? [arma] : [], instancia);
-export const pasivasConEquipo = (personaje, equipos = [], instancia) => [...pasivasDelPersonaje(personaje, instancia),
-  ...equipos.flatMap((e) => e.pasivas ?? [])];
+export const pasivasConArma = (personaje, arma, instancia, catalogo) => pasivasConEquipo(personaje, arma ? [arma] : [], instancia, catalogo);
+export const pasivasConEquipo = (personaje, equipos = [], instancia, catalogo) => [...pasivasDelPersonaje(personaje, instancia, catalogo),
+  ...equipos.flatMap((e) => e.pasivas ?? []), ...estadoHabilidades(personaje, instancia, catalogo).extras];

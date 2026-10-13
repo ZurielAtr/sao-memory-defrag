@@ -89,6 +89,17 @@ function teñida(img, color) {
 
 const rgb = (c, a = 1) => `rgba(${c?.r ?? 255},${c?.g ?? 255},${c?.b ?? 255},${a})`;
 
+/** Arrastre/rueda de listas; el árbol utiliza ambos ejes (dirección 3). */
+export function desplazarLista(n, dx, dy, desde = null) {
+  const dir = n.interior?.direccion;
+  const y = desde?.y ?? n._desplaz ?? 0, x = desde?.x ?? n._desplazX ?? 0;
+  if (dir === 2) n._desplaz = Math.max(0, Math.min(n._max ?? 0, y + dx));
+  else {
+    n._desplaz = Math.max(0, Math.min(n._max ?? 0, y + dy));
+    if (dir === 3) n._desplazX = Math.max(0, Math.min(n._maxX ?? 0, x + dx));
+  }
+}
+
 export class Pantalla {
   /** Carga /assets/<ruta> (.csb) y sus recursos. */
   static async cargar(ruta) {
@@ -184,7 +195,7 @@ export class Pantalla {
     ctx.globalAlpha = 1;
   }
 
-  dibujarNodo(ctx, n, padre, alfaPadre) {
+  dibujarNodo(ctx, n, padre, alfaPadre, recortes = []) {
     if (!n.visible) return;
     const [w, h] = this.tamano(n);
     const m = mul(padre, matrizLocal(n, w, h));
@@ -192,7 +203,7 @@ export class Pantalla {
     ctx.globalAlpha = alfa;
     this.dibujarPropio(ctx, n, m, w, h, alfa);
     if (n.clase === 'Button' || n.clase === 'CheckBox' || n.tactil || n.interior || n.clase === 'PageView') {
-      this.zonas.push({ n, m, w, h });
+      this.zonas.push({ n, m, w, h, recortes });
     }
     let hijos = [...n.hijos].sort((a, b) => a.zOrder - b.zOrder);
     let mh = m;
@@ -200,8 +211,10 @@ export class Pantalla {
       // ScrollView/ListView: los hijos van en el contenedor interior, alineado arriba (o a la izquierda).
       const ih = n.interior.alto || h, iw = n.interior.ancho || w;
       const d = n._desplaz ?? 0;
-      mh = n.interior.direccion === 2 ? mul(m, trasladar(-d, 0)) : mul(m, trasladar(0, h - ih + d));
+      mh = n.interior.direccion === 2 ? mul(m, trasladar(-d, 0))
+        : mul(m, trasladar(n.interior.direccion === 3 ? -(n._desplazX ?? 0) : 0, h - ih + d));
       n._max = Math.max(0, n.interior.direccion === 2 ? iw - w : ih - h);
+      n._maxX = Math.max(0, iw - w);
     }
     if (n.clase === 'PageView') hijos = hijos.slice(n._pagina ?? 0, (n._pagina ?? 0) + 1);
     const recorta = n.panel?.recorte || n.interior;
@@ -212,7 +225,8 @@ export class Pantalla {
       ctx.rect(0, 0, w, h);
       ctx.clip();
     }
-    for (const hijo of hijos) this.dibujarNodo(ctx, hijo, mh, alfa);
+    const recortesHijos = recorta ? [...recortes, { m, w, h }] : recortes;
+    for (const hijo of hijos) this.dibujarNodo(ctx, hijo, mh, alfa, recortesHijos);
     if (recorta) ctx.restore();
   }
 
@@ -354,6 +368,11 @@ export class Pantalla {
   nodoEn(x, y, filtro = () => true) {
     for (let i = this.zonas.length - 1; i >= 0; i--) {
       const z = this.zonas[i];
+      if (z.recortes?.some((r) => {
+        const inv = invertir(r.m); if (!inv) return true;
+        const [cx, cy] = aplicar(inv, x, y);
+        return cx < 0 || cy < 0 || cx > r.w || cy > r.h;
+      })) continue;
       const inv = invertir(z.m);
       if (!inv) continue;
       const [lx, ly] = aplicar(inv, x, y);

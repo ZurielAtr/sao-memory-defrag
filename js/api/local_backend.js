@@ -13,8 +13,9 @@
 
 import { MemoryStore } from './store.js';
 import { equipoCompatible, RANURAS_EQUIPO } from '../equipo.js';
+import { consultarRanura, consultarNodo } from '../habilidades.js';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 // Migraciones del estado guardado: MIGRACIONES[n] convierte un estado de versión n a n + 1.
 // Al cambiar el formato del estado se sube SCHEMA_VERSION y se agrega aquí la conversión.
@@ -31,6 +32,21 @@ const MIGRACIONES = {
   3: (estado) => {
     // D78: ausencia de un estado confirmado equivale a0, como el ctor nativo.
     for (const c of estado.characters) c.passive_skill ??= [];
+    return estado;
+  },
+  4: (estado, master) => {
+    for (const c of estado.characters) {
+      c.slot_skill ??= [];
+      c.ability_board ??= [];
+      c.unlocked_ability_release_level ??= 1;
+      c.unlocked_limit_break_node_count ??= 0;
+      c.selected_limit_break_direction ??= [];
+      c.growth_nodes ??= [];
+      // Continuidad del port: conservar las habilidades básicas ya disponibles.
+      // Son registros explícitos locales; no una inferencia del ctor nativo (0).
+      c.active_skill ??= (master.personaje(c.character_id)?.activas ?? []).filter((id) => id > 0)
+        .map((id) => ({ master_active_skill_id: id, level: 1 }));
+    }
     return estado;
   },
 };
@@ -118,7 +134,7 @@ export class LocalBackend {
     while (estado.schema < SCHEMA_VERSION) {
       const migrar = MIGRACIONES[estado.schema];
       if (!migrar) fail('schema_sin_migracion', `no hay migración desde la versión ${estado.schema}`);
-      estado = migrar(estado);
+      estado = migrar(estado, this.master);
       estado.schema += 1;
       migrado = true;
     }
@@ -166,7 +182,10 @@ export class LocalBackend {
     const m = this.master.personaje(characterId);
     if (!m) fail('personaje_inexistente', `personaje ${characterId} no está en la master data`);
     const p = { uid: estado.siguienteUid++, character_id: characterId, level: 1, exp: 0,
-      weapon_uid: null, armor_uid: null, accessory_uid: null, passive_skill: [], created_at: this.now() };
+      weapon_uid: null, armor_uid: null, accessory_uid: null, passive_skill: [],
+      active_skill: (m.activas ?? []).filter((id) => id > 0).map((id) => ({ master_active_skill_id: id, level: 1 })),
+      slot_skill: [], ability_board: [], unlocked_ability_release_level: 1,
+      unlocked_limit_break_node_count: 0, selected_limit_break_direction: [], growth_nodes: [], created_at: this.now() };
     estado.characters.push(p);
     return p;
   }
@@ -174,7 +193,9 @@ export class LocalBackend {
   /** Suma exp a un personaje y sube de nivel (PROVISIONAL: tabla character_level, tope por rareza). */
   darExp(personaje, exp) {
     const rareza = this.master.personaje(personaje.character_id)?.rareza;
-    const tope = this.master.nivelMaximo(rareza);
+    // Contrato local: cuatro rupturas añaden cinco niveles cada una; cap +20
+    // usado ya en characterStats. El servidor original no se recuperó.
+    const tope = this.master.nivelMaximo(rareza) + 5 * Math.min(4, Math.max(0, personaje.unlocked_limit_break_node_count ?? 0));
     const antes = personaje.level;
     personaje.exp = Math.min(personaje.exp + exp, this.master.expParaNivel(tope));
     while (personaje.level < tope && personaje.exp >= this.master.expParaNivel(personaje.level + 1)) {
@@ -254,6 +275,17 @@ function vistaInventario(estado) {
 // Cada ruta: { cuenta: requiere cuenta, fn(estado, params) -> { respuesta, nuevo? } }.
 // `nuevo` es el estado a guardar (se guarda entero al final: cada petición es atómica).
 
+function personajePropio(estado, uid) {
+  if (!Number.isSafeInteger(uid) || uid <= 0) fail('personaje_invalido', 'Personaje inválido');
+  const c = estado.characters.find((c) => c.uid === uid);
+  if (!c) fail('personaje_ajeno', 'El personaje no pertenece a la cuenta');
+  return c;
+}
+
+function consumirMateriales(estado, costes) {
+  for (const r of costes) estado.items[r.id] -= r.cantidad;
+}
+
 function asignarEquipo(backend, estado, { character_uid, slot, equipment_uid }) {
   if (!Object.hasOwn(RANURAS_EQUIPO, slot)) fail('ranura_invalida', 'ranura de equipo inválida');
   if (!Number.isSafeInteger(character_uid) || character_uid <= 0) fail('personaje_invalido', 'personaje inválido');
@@ -276,6 +308,54 @@ function asignarEquipo(backend, estado, { character_uid, slot, equipment_uid }) 
 }
 
 const RUTAS = {
+  'character/ability-board': {
+    cuenta: true,
+    fn(estado, { character_uid, local_node_id, direction, choose_master_item_id }) {
+      const c = personajePropio(estado, character_uid);
+      if (!Number.isSafeInteger(local_node_id) || local_node_id <= 0) fail('nodo_invalido', 'Nodo inválido');
+      const pj = this.master.personaje(c.character_id);
+      const compra = consultarNodo(pj, c, this.master.habilidades(), estado, local_node_id,
+        { direccion: direction, material: choose_master_item_id });
+      if (!compra.disponible) fail(compra.code, compra.motivo);
+      consumirMateriales(estado, compra.costes);
+      c.ability_board.push(local_node_id);
+      c.unlocked_ability_release_level = compra.liberacion;
+      const n = compra.nodo;
+      if (n.tipo === 9) {
+        c.unlocked_limit_break_node_count += 1;
+        c.selected_limit_break_direction.push({ local_node_id, selected_direction: compra.direccion });
+      }
+      if (n.tipo === 10) c.growth_nodes.push({ growth_node_id: n.id, node_type: compra.direccion });
+      if (n.tipo === 12) {
+        const id = pj.pasivas[n.habilidad.ranura - 1];
+        c.passive_skill = c.passive_skill.filter(r=>r.master_passive_skill_id!==id);
+        c.passive_skill.push({ master_passive_skill_id: id, status: n.habilidad.estado });
+      }
+      if (n.tipo === 11) {
+        const id = pj.activas[n.habilidad.ranura - 1];
+        const nivel = Math.max(n.habilidad.nivel, ...c.active_skill.filter(r=>r.master_active_skill_id===id).map(r=>r.level));
+        c.active_skill = c.active_skill.filter(r=>r.master_active_skill_id!==id);
+        c.active_skill.push({ master_active_skill_id: id, level: nivel });
+      }
+      return { respuesta: { data: { character: copy(c), items: vistaInventario(estado).items } }, nuevo: estado };
+    },
+  },
+  'character/slot-skill': {
+    cuenta: true,
+    fn(estado, { character_uid, slot, expected_level, choose_master_item_id = null }) {
+      const c = personajePropio(estado, character_uid);
+      if (!Number.isSafeInteger(slot) || slot <= 0) fail('ranura_invalida', 'Ranura inválida');
+      const actual = c.slot_skill.find((r) => r.slot === slot)?.level ?? 0;
+      if (!Number.isSafeInteger(expected_level) || expected_level !== actual) fail('progreso_cambiado', 'El nivel de la ranura cambió; vuelve a abrirla');
+      const compra = consultarRanura(this.master.personaje(c.character_id), c, this.master.habilidades(), estado, slot, choose_master_item_id);
+      if (!compra.disponible) fail(compra.code, compra.motivo);
+      consumirMateriales(estado, compra.costes);
+      const r = { slot, master_slot_skill_id: compra.oferta.id, level: compra.nivel + 1, max_level: compra.oferta.maximo };
+      const i = c.slot_skill.findIndex((r) => r.slot === slot);
+      if (i < 0) c.slot_skill.push(r); else c.slot_skill[i] = r;
+      return { respuesta: { data: { character: copy(c), items: vistaInventario(estado).items } }, nuevo: estado };
+    },
+  },
   'character/equipment': {
     cuenta: true,
     fn(estado, params) { return asignarEquipo(this, estado, params); },

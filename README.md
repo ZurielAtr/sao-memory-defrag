@@ -1,5 +1,7 @@
 # SAO Memory Defrag · Port para navegador
 
+**Este proyecto se está desarrollando en su totalidad con inteligencia artificial generativa, utilizando modelos como Claude Opus 5.5 y GPT 6.1 Sol.**
+
 Port no oficial hecho por fans. Está en desarrollo y todavía tiene diferencias respecto al juego original.
 
 **[Abrir el juego](https://zurielatr.github.io/sao-memory-defrag/)**
@@ -20,9 +22,16 @@ En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**,
 en la partida y sus estadísticas y pasivas se aplican en combate. Si la lista está vacía, primero
 necesitas obtener equipo en las misiones. Las mejoras y evoluciones siguen pendientes.
 
-Las pasivas propias del personaje requieren un desbloqueo registrado en la partida; el nivel
-por sí solo no las activa. El menú para desbloquearlas todavía está pendiente. Las pasivas de
-las piezas equipadas se aplican con sus condiciones de combate.
+En **Equipo**, pulsa **Árbol** para desbloquear nodos con sus materiales y requisitos.
+Puedes arrastrar el árbol en ambos ejes. Las pasivas propias requieren comprar su nodo;
+subir de nivel por sí solo no las activa. **Ranuras** permite adquirir y mejorar las habilidades
+disponibles para ese personaje. Si hay materiales alternativos, elige uno antes de comprar.
+Las mejoras adquiridas se guardan y se aplican en combate.
+
+La asignación de habilidades a los nodos y la dirección de crecimiento de las ramas de límite
+usan reglas provisionales del servidor local. Quedan pendientes asistencia de ranuras,
+cambio de dirección de límite y compras con diamantes. Las pasivas de las piezas equipadas
+se aplican con sus condiciones de combate.
 
 ## Controles de combate
 
