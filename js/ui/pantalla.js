@@ -236,6 +236,8 @@ export class Pantalla {
     const recortesHijos = recorta ? [...recortes, { m, w, h }] : recortes;
     const alfaHijos=n.cascadaAlpha===false?alfaPadre:alfa;
     for (const hijo of hijos) this.dibujarNodo(ctx, hijo, mh, alfaHijos, recortesHijos);
+    // D95: dibujo adicional tras los hijos y dentro del recorte del nodo (efectos SpriteStudio del Árbol).
+    if (n.alDibujar) { ctx.save(); try { n.alDibujar(ctx, this); } finally { ctx.restore(); } }
     if (recorta) ctx.restore();
   }
 

@@ -18,7 +18,8 @@ import { rutaWeb } from '../rutas.js';
 
 import '../importador/comprobar.js'; // D68: sin datos (página pública sin importar) manda a la portada
 import { Pantalla, baseCanvas, clonar, apilar, DISENO, desplazarLista } from './pantalla.js';
-import { configurarPie } from './pie.js';
+import { configurarPie, animarPie, iniciarPie } from './pie.js';
+import { actualizarAcciones } from './acciones.js';
 import { recorrer } from './csb.js';
 import { imagen, fuenteTTF } from './recursos.js';
 import { crearApiLocal } from '../api/index.js';
@@ -40,6 +41,8 @@ import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.j
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
 import {cargarPresentacionReclutamiento,controlesResultado} from './reclutamiento_animacion.js';
 import {movimientoReducido} from './animaciones.js';
+import {PopupAnimado} from './popup_menu.js';
+import {cargarEfectosArbol} from './efectos_arbol.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -154,10 +157,18 @@ async function fondo(ruta) {
 
 function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null, largas = {},teclado=['home','town','taberna','upgrade','multi','aviso-principal'].includes(nombre) } = {}) {
   Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas,teclado,foco:null });
+  for (const c of capas) iniciarPie(c.pantalla);
   canvas.tabIndex=0;canvas.setAttribute('aria-label',`SAO MD · ${nombre}`);
   audio.escena(nombre);
   if (!nombre.startsWith('resultado')&&nombre!=='animacion-reclutamiento') void audio.contexto(nombre === 'titulo' ? 'titulo' : ['home','town','taberna','multi','reclutamiento','confirmar-reclutamiento'].includes(nombre) ? 'home' : ['upgrade','equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
   document.title = `SAO MD · ${nombre}`;
+}
+
+/** D95: popup de menú sobre las capas actuales, con la transición de BaseCommonPopupUI. */
+function popupMenu(nombre,debajo,pantalla,acciones,{cerrar=[],alCerrar,alfaVelo,encima=[],base=null,teclado=true}={}){
+  const popup=new PopupAnimado(pantalla,acciones,{cerrar,alCerrar,alfaVelo});
+  escena(nombre,[...debajo,{velo:()=>popup.velo},{pantalla,base},...encima],popup.acciones,{teclado,cada:t=>popup.cada(t)});
+  return popup;
 }
 
 function dibujar(t) {
@@ -172,7 +183,10 @@ function dibujar(t) {
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, w, h);
-    estado.cada?.(t / 1000);
+    const seg = t / 1000;
+    actualizarAcciones(estado.ultimoCuadro == null ? 0 : Math.min(.1, seg - estado.ultimoCuadro));
+    estado.ultimoCuadro = seg;
+    estado.cada?.(seg);
     const b = baseCanvas(canvas);
     for (const c of estado.capas) {
       if (c.img) {
@@ -184,7 +198,7 @@ function dibujar(t) {
         c.animacion.dibujar(ctx);
       } else if (c.velo) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = c.velo;
+        ctx.fillStyle = typeof c.velo === 'function' ? c.velo() : c.velo;
         ctx.fillRect(0, 0, w, h);
       } else {
         c.pantalla.dibujar(ctx, c.base ? c.base(b) : b);
@@ -279,7 +293,10 @@ addEventListener('keydown', (ev) => {
 // Pie común: conserva el ancla reflejada del CSB y la altura recuperada del código Android.
 async function pie({ menu = false, volver = true } = {}) {
   const p = await Pantalla.cargar('ui/common/common_footer_menu_s.csb');
-  return configurarPie(p, { menu, volver });
+  configurarPie(p, { menu, volver });
+  const anterior = estado.pieMenu;estado.pieMenu = menu;
+  animarPie(p, anterior, menu);
+  return p;
 }
 
 // ---------- pantallas ----------
@@ -321,7 +338,7 @@ async function avisoPrincipal(titulo,mensaje){
   const anterior={pantalla:estado.pantalla,capas:estado.capas,acciones:estado.acciones,cada:estado.cada,foco:estado.foco,teclado:estado.teclado};
   const p=await crearAvisoPrincipal(titulo,mensaje);
   const volver=()=>{escena(anterior.pantalla,anterior.capas,anterior.acciones,{cada:anterior.cada,teclado:anterior.teclado});estado.foco=anterior.foco;};
-  escena('aviso-principal',[...anterior.capas,{velo:'rgba(0,0,0,.8)'},{pantalla:p}],{button_close:volver,button_footer_return:volver});
+  popupMenu('aviso-principal',anterior.capas,p,{},{cerrar:['button_close','button_footer_return'],alCerrar:volver,alfaVelo:.8});
 }
 
 async function menuPrincipal(nombre,categoria='all',indice=0){
@@ -333,7 +350,15 @@ async function menuPrincipal(nombre,categoria='all',indice=0){
   const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria,indice));
   const pendiente=k=>()=>avisoPrincipal(...PENDIENTES_MENU[k]);
   const acciones={button_footer_return:()=>home()};
-  if(nombre==='town')acciones.button_footer_menu=()=>{const menu=p.buscar('menu_town');p.mostrar('menu_town',!menu.visible);};
+  // D95: MENU es MenuWindowUI (BaseCommonPopupUI): velo y apertura/cierre animados; el pie queda encima.
+  if(nombre==='town')acciones.button_footer_menu=()=>{
+   const menu=p.buscar('menu_town');if(!p.townOriginal){p.mostrar('menu_town',!menu.visible);return;}
+   const anterior={capas:estado.capas,acciones:estado.acciones},ventana=new Pantalla({raiz:{...menu,visible:true}},p.ruta);
+   const delMenu={button_footer_return:()=>home()};
+   for(const d of p.destinosMenuOriginal??[])delMenu[d.boton]=acciones[d.boton];
+   popupMenu('menu-town',anterior.capas.filter(c=>c.pantalla!==vuelta),ventana,delMenu,{cerrar:['button_footer_menu'],
+    alCerrar:()=>escena('town',anterior.capas,anterior.acciones),encima:[{pantalla:vuelta}]});
+  };
   if(nombre==='town')for(const d of p.destinosMenuOriginal??[]){
     const mensajes={announce:'Los avisos del servicio original todavía no están disponibles.',notification:'No hay notificaciones del servicio original en esta partida local.',item:'El almacén de objetos todavía está pendiente. Los materiales guardados se muestran al adquirir mejoras.',gift_box:'La bandeja de regalos todavía está pendiente.',exchangeshop:'La tienda de intercambio de este menú todavía está pendiente.',mission:'Las tareas y recompensas de este menú todavía están pendientes.',status:'El estado de usuario completo todavía está pendiente.',others:'Las opciones originales de este submenú todavía están pendientes.',guild:'Los gremios todavía están pendientes.',friend:'La lista de amigos todavía está pendiente.'};
     acciones[d.boton]=()=>avisoPrincipal(d.titulo,mensajes[d.tipo]);
@@ -424,13 +449,14 @@ async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos
   const resumen=`${detalle}\n${stats?stats+'\n':''}${premios?'Recibirás '+premios+'\n':''}${consumidos}Al confirmar se guardarán los cambios.`,popup=await crearConfirmacionOperacion(TITULOS_EQUIPO[modo],resumen,{modo});
   if(confirmTicket!==estado.aperturaPrincipal)return;
   let ocupada=false;
-  const cancelar=()=>{if(!ocupada)escena('operacion-equipo',anterior.capas,anterior.acciones,{teclado:true});};
-  escena('confirmar-equipo',[...anterior.capas,{velo:'rgba(0,0,0,.82)'},{pantalla:popup}],{cancelar_operacion:cancelar,button_footer_return:cancelar,confirmar_operacion:async()=>{
+  const cancelar=()=>escena('operacion-equipo',anterior.capas,anterior.acciones,{teclado:true});
+  const ventana=popupMenu('confirmar-equipo',anterior.capas,popup,{confirmar_operacion:async()=>{
    if(ocupada)return;ocupada=true;popup.buscar('confirmar_operacion').alpha=135;
    try{await estado.api.request('equipment/'+modo,{...params,quote:consulta.quote});await cargarCuenta();
     await operacionEquipo(modo,{...o,uids:[],uid:modo==='sell'?null:o.uid,nivel:modo==='strengthen'?Math.min((o.nivel??0)+1,ficha.nivelMax):o.nivel,mensaje:'Cambios guardados en tu partida'});
    }catch(e){await operacionEquipo(modo,{...o,mensaje:e.message});}
-  }},{teclado:true});
+  }},{cerrar:['cancelar_operacion','button_footer_return'],alCerrar:cancelar,alfaVelo:.82});
+  const cerrarEquipo=ventana.acciones.cancelar_operacion;ventana.acciones.cancelar_operacion=ventana.acciones.button_footer_return=()=>{if(!ocupada)cerrarEquipo();};
  };
  const bg=await fondo(FONDO_MENU);if(ticket!==estado.aperturaPrincipal)return;
  escena('operacion-equipo',[bg,{pantalla:p}],acciones,{teclado:true});
@@ -469,13 +495,14 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
   const popup=await crearConfirmacionOperacion('Reclutar ×'+o.count,
    `${b.nombre}\nReconstrucción comunitaria\n${o.count} sorteos · ${consulta.coste} diamantes\n★4 4% · ★3 25% · ★2 71%\nRepetidos ★2/3/4: 1/2/50 cristales.\nPool: Fanadata · reglas: S-argo.`);
   if(confirmTicket!==estado.aperturaPrincipal)return;let ocupada=false;
-  const cancelar=()=>{if(!ocupada)escena('reclutamiento',anterior.capas,anterior.acciones,{teclado:true});};
-  escena('confirmar-reclutamiento',[...anterior.capas,{velo:'rgba(0,0,0,.82)'},{pantalla:popup}],{cancelar_operacion:cancelar,button_footer_return:cancelar,confirmar_operacion:async()=>{
+  const cancelar=()=>escena('reclutamiento',anterior.capas,anterior.acciones,{teclado:true});
+  const ventana=popupMenu('confirmar-reclutamiento',anterior.capas,popup,{confirmar_operacion:async()=>{
    if(ocupada)return;ocupada=true;popup.buscar('confirmar_operacion').alpha=135;
    try{const r=(await estado.api.request('lottery/draw',{banner_id:id,count:o.count,quote:consulta.quote})).data;
     await reproducirResultados(id,o,r.results);
    }catch(e){await reclutamiento(id,{...o,mensaje:e.message});}
-  }},{teclado:true});
+  }},{cerrar:['cancelar_operacion','button_footer_return'],alCerrar:cancelar,alfaVelo:.82});
+  const cerrarSorteo=ventana.acciones.cancelar_operacion;ventana.acciones.cancelar_operacion=ventana.acciones.button_footer_return=()=>{if(!ocupada)cerrarSorteo();};
  };
  const bg=await fondo(FONDO_MENU);if(ticket!==estado.aperturaPrincipal)return;
  escena('reclutamiento',[bg,{pantalla:p}],acciones,{teclado:true});
@@ -917,13 +944,28 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
           direction: consulta.direccion, choose_master_item_id: consulta.material,use_hacking_crystals:e?.cristales===true }
           : { character_uid: c.uid, slot: n, expected_level: consulta.nivel, choose_master_item_id: e };
         await estado.api.request(modo === 'arbol' ? 'character/ability-board' : 'character/slot-skill', params);
+        if (modo === 'arbol') estado.arbolLiberar = { uid: c.uid, local: n };
         if (ticket !== estado.aperturaPrincipal) return;
-        await habilidades(m, k, modo, n, null, 'Mejora guardada');
+        // D95: en el Árbol se vuelve al tablero para ver la liberación (AbilityBoardEvent: el cliente
+        // cierra la confirmación y anima el nodo); las Ranuras conservan su panel con el aviso.
+        await (modo === 'arbol' ? habilidades(m, k, modo) : habilidades(m, k, modo, n, null, 'Mejora guardada'));
       } catch (err) { if (ticket === estado.aperturaPrincipal) await habilidades(m, k, modo, n, e, err.message); }
     },
   });
   if (ticket !== estado.aperturaPrincipal) return;
-  escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones,{teclado:true});
+  // D95: efectos SpriteStudio de los nodos; sin ellos el Árbol sigue funcionando.
+  let efectos = null;
+  if (pantalla._nodosArbol) {
+    efectos = await cargarEfectosArbol(pantalla, pantalla._nodosArbol).catch((e) => { console.warn('Árbol: efectos no disponibles', e); return null; });
+    if (ticket !== estado.aperturaPrincipal) return;
+    const previo = estado.arbolPrevio, liberar = estado.arbolLiberar;
+    const disponibles = new Set(pantalla._nodosArbol.filter((x) => x.disponible).map((x) => x.local));
+    if (efectos && liberar?.uid === c.uid && previo?.uid === c.uid)
+      efectos.liberar(liberar.local, [...disponibles].filter((x) => !previo.disponibles.has(x) && x !== liberar.local));
+    estado.arbolLiberar = null; estado.arbolPrevio = { uid: c.uid, disponibles };
+    if (efectos) pantalla._tableroArbol.alDibujar = (ctx) => efectos.dibujar(ctx);
+  }
+  escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones,{teclado:true,cada:efectos?(t)=>efectos.actualizar(t):null});
 }
 
 // D77: lista y botones originales; asignaciones/acciones son del backend local.

@@ -3,6 +3,7 @@ import { Pantalla, clonar } from './pantalla.js';
 import { recorrer } from './csb.js';
 import { consultarRanura, consultarNodo, inventarioMateriales, nodosDelPersonaje, estadoHabilidades, DIRECCIONES_LIMITE } from '../habilidades.js';
 import { posicionNodo, limitesTablero } from './composicion_habilidades.js';
+import { esperaNodo, nodoAbierto } from './efectos_arbol.js';
 import { envolverTexto } from './historia_menus.js';
 
 const FUENTE = 'fonts/SAOFont-Regular_v1.ttf';
@@ -61,6 +62,10 @@ export function componerTablero(p, modelo, nodos, consultas, elegido, abrir) {
     zona._desplazX = Math.max(0, Math.min(ancho - 750, x - 375));
     zona._desplaz = Math.max(0, Math.min(alto - 768, alto - y - 384));
   }
+  // D95: estado de animación de cada nodo (FUN_007f2e04) para los efectos SpriteStudio.
+  p._tableroArbol = zona;
+  p._nodosArbol = nodos.map(n => { const q = consultas.get(n.local);
+    return { local: n.local, espera: esperaNodo(n, q), disponible: nodoAbierto(q) }; });
   p.raiz.hijos.push(zona); return acciones;
 }
 
