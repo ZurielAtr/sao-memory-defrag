@@ -63,7 +63,8 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[]){
   textoMenu('nota_taberna','Consultar tu colección no consume diamantes\nni entrega personajes o equipo nuevos.',375,395,{alto:100}));
  if(banners.length&&categoria!=='weapon'){
   p.texto('ofertas_taberna','Banners históricos · grupos de Fanadata');p.buscar('ofertas_taberna').y=930;p.buscar('ofertas_taberna').alto=60;
-  p.buscar('inventario_taberna').y=365;p.buscar('consultar_taberna').y=270;p.buscar('nota_taberna').y=170;
+  p.buscar('inventario_taberna').y=365;p.buscar('consultar_taberna').y=270;
+  Object.assign(p.buscar('nota_taberna'),{y:180,alto:70});
   p.texto('nota_taberna','Probabilidades y condiciones visibles en cada banner.\nReconstrucción comunitaria · partida local.');
   banners.slice(0,3).forEach((b,i)=>{const n=acceso(plantilla,'banner_'+b.id,b.nombre,375,815-i*145);n.ancho=650;
    const t=plantilla.buscar('text_title',n);Object.assign(t,{x:325,ancho:620});p.raiz.hijos.push(n);});
@@ -77,8 +78,10 @@ export function componerUpgrade(p,plantilla,cuenta){
  const t=p.buscar('text_commont');Object.assign(t,textoMenu('text_commont',
   `Upgrade · Herrería\n${cuenta?.equipment?.length??0} piezas en tu inventario\nSelecciona una operación para revisar sus requisitos.`,375,970,{ancho:660,alto:170,tam:30}));
  for(const n of ['button_progress','button_forge','button_sell','button_exchange']){
-  const b=p.buscar(n);b.alpha=255;b.escalaX=b.escalaY=.83;
+  const b=p.buscar(n);b.alpha=255;b.escalaX=b.escalaY=.83;b.y+=50;
  }
+ p.buscar('button_equipment_list').y+=50;
+ p.buscar('image_footer_bg').alto+=50;
  p.raiz.hijos.push(acceso(plantilla,'upgrade_arbol','Árbol',183,720),acceso(plantilla,'upgrade_ranuras','Ranuras',566,720),
   textoMenu('nota_upgrade','Árbol y ranuras usan tus materiales,\nrequisitos y mejoras guardadas.',375,575,{alto:100}));
  return p;
@@ -88,6 +91,8 @@ export function componerMulti(p,plantilla){
  for(const n of ['button_eventsbanner','button_left','button_right','text_remaining_time'])p.mostrar(n,false);
  p.texto('text_party_edit','Equipo local');
  for(const n of ['button_party_search','button_friend_search','button_numbersearch','button_matching'])p.buscar(n).alpha=170;
+ // Mantener ambas filas juntas y reservar el pie para el regreso de 173×155, sin reducirlo.
+ for(const n of ['button_party_edit','button_party_search','button_friend_search','button_numbersearch'])p.buscar(n).y+=48;
  p.raiz.hijos.push(textoMenu('estado_multi','Multi · Sin servidor',375,1230,{alto:70,tam:40}),
   textoMenu('nota_multi','Puedes preparar tu equipo y jugar solo.\nLas salas, amigos e invitaciones online\nrequieren un servidor.',375,1040,{alto:150}),
   acceso(plantilla,'multi_solo','Misiones en solitario',375,900));

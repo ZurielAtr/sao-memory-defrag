@@ -154,12 +154,14 @@ addEventListener('blur', () => held.clear());
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   for (const c of [canvas, hud]) {
-    c.width = Math.round(innerWidth * dpr);
-    c.height = Math.round(innerHeight * dpr);
+    const r = c.getBoundingClientRect();
+    c.width = Math.max(1, Math.round(r.width * dpr));
+    c.height = Math.max(1, Math.round(r.height * dpr));
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 addEventListener('resize', resize);
+new ResizeObserver(resize).observe(canvas);
 resize();
 
 const popups = [];
@@ -1486,8 +1488,7 @@ function bar(x, y, w, h, frac, color) {
 function drawHud(p, foes, dt) {
   if (hudCsb) return hudCsb.dibujar(ctx, { jugador: p, grupo, enemigos: foes, battle, combo, popups, dt, suelo: groundY, escala: CHAR_SCALE,
     puertas: battle && !battle.repeat ? battle.gates() : [] });
-  const W = innerWidth;
-  const H = innerHeight;
+  const { width: W, height: H } = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, W, H);
   ctx.font = '600 14px "Segoe UI", system-ui, sans-serif';
   ctx.textBaseline = 'top';

@@ -1,0 +1,17 @@
+/* Marco común del juego: diseño original 750 × 1334, sin estirar sus ejes. */
+:root { color-scheme: dark; }
+html, body { margin: 0; width: 100%; height: 100%; background: #080a0e; overflow: hidden; }
+#viewport-juego {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(100vw, calc(100vh * 750 / 1334));
+  height: min(100vh, calc(100vw * 1334 / 750));
+  width: min(100vw, calc(100dvh * 750 / 1334));
+  height: min(100dvh, calc(100vw * 1334 / 750));
+  overflow: hidden;
+  background: #000;
+}
+#viewport-juego canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#carga { position: absolute; inset: 0; display: grid; place-items: center; color: #9fd3ff;
+  font: 14px "Segoe UI", system-ui, sans-serif; background: #050a14; }

@@ -19,6 +19,8 @@ La APK se procesa en tu equipo y **no se envía al servidor**. Los recursos impo
 
 Se recomienda ordenador con teclado. Los controles táctiles están pendientes y no se ha validado el funcionamiento en Safari/iPhone/iPad.
 
+En escritorio, menús, diálogos y combate se muestran centrados con el formato vertical original, a la máxima altura disponible y con márgenes oscuros a los lados. Si el ancho es insuficiente, se ajustan sin recortarse. El regreso conserva su tamaño y orientación; se han corregido solapamientos en Taberna, Herrería, Multi, Mapa y Habilidades. Esta actualización conserva los recursos importados y la partida; no requiere regenerar datos. La fidelidad completa de algunas pantallas sigue pendiente.
+
 En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**, **Armadura** o
 **Accesorio**. Puedes equipar o retirar piezas compatibles de tu inventario. La elección se guarda
 en la partida y sus estadísticas y pasivas se aplican en combate. Si la lista está vacía, primero

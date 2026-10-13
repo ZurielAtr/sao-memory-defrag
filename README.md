@@ -49,6 +49,8 @@ reduced-motion preference. Other effects and transitions still need fidelity wor
 
 ## What this repository contains
 
+On desktop, menus, dialogue and combat use the original portrait format, centered at the largest size that fits the viewport, with dark side margins. Narrow screens fit the full view without cropping. The back button keeps its original size and orientation; overlaps in the Tavern, Blacksmith, Multi, Map and Skills have been corrected. This update preserves imported resources and saves and does not require data regeneration. Full fidelity of some screens remains pending.
+
 HTML and JavaScript for the port, the importer, and the simulated local server that runs in your browser. It contains no APKs, game assets, generated data tables, or decompiled code, and provides no download links for the original game.
 
 The site is published with GitHub Pages from `main`. To try the code locally, serve this folder with a local HTTP server (for example, `python -m http.server 8000`) and open `http://localhost:8000/`. Opening the HTML directly with `file://` does not support importing.

@@ -141,6 +141,9 @@ export async function crearPantallaHabilidades(o) {
   info.hijos.at(-1).alto = 38;
   const comprarBtn = boton(btn, 'comprar_habilidad', modo === 'arbol' ? 'Desbloquear' : `Adquirir nivel ${(consulta?.nivel ?? 0) + 1}`, 355, 109, 425, Boolean(consulta?.disponible));
   info.hijos.push(comprarBtn);
+  // Reservar el regreso original bajo el panel. Mantener la posición absoluta del contenido superior.
+  info.y = 160; info.alto = 440;
+  for (const n of info.hijos) n.y -= 60;
   if (consulta?.disponible) acciones.comprar_habilidad = () => comprar(modo, objetivo, consulta, elegido);
   p.raiz.hijos.push(info);
   await p.precargar();

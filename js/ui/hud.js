@@ -13,34 +13,20 @@ import { rutaWeb } from '../rutas.js';
 //   game/game_popup_announce_s.csb     avisos (escenario nuevo, misión completada o fallida)
 //   fonts/damage_*_number.fnt          números de daño
 //
-// El HUD original es vertical (750×1334, como el juego en el móvil) y la batalla del port es apaisada:
-// se dibuja a la altura de la ventana y cada pieza se pega al borde más cercano (izquierda, centro o
-// derecha). PROVISIONAL: esa adaptación, qué .csb es cada pieza, 3 botones de skill (la 4.ª ranura del port
+// El HUD conserva el diseño vertical original (750×1334) dentro del marco centrado del juego.
+// PROVISIONAL: qué .csb es cada pieza, 3 botones de skill (la 4.ª ranura del port
 // va por teclado), sin nombres sobre los enemigos, el aviso de jefe al verlo por primera vez, los rayos de las
 // puertas (no tienen gráfico conocido) y la ventana de pausa sin pestañas.
 // Switch: character_button_1–3 son los puestos del grupo (FUN_008f9850): miniatura, HP y MP; a media opacidad
 // (0x7f) si no se puede cambiar a él (el activo, caído o en la espera de 0.2 s); image_icon_dead_k si cayó.
 // El estado (image_character_status_1) y los botones de skill son los del activo.
 
-import { Pantalla, mul, trasladar, matrizLocal, DISENO } from './pantalla.js';
+import { Pantalla, mul, trasladar, baseCanvas, DISENO } from './pantalla.js';
 import { recorrer } from './csb.js';
 import { fuenteBitmap } from './recursos.js';
 
 const ELEMENTOS = [null, 'unattributed', 'fire', 'water', 'wind', 'light', 'dark', 'earth'];
 const BOTONES_SKILL = 3;
-const MARGEN = 120; // a menos de esto del borde (en unidades del diseño) la pieza se pega a ese borde
-
-/**
- * Desplazamiento en x de una pieza del HUD (bordes izq–der en el diseño de 750) cuando la pantalla
- * tiene `extra` unidades más de ancho: 0 (pegada a la izquierda), `extra` (derecha) o `extra/2` (centro).
- * PROVISIONAL: adaptación del HUD vertical a la batalla apaisada.
- */
-export function desplazamiento(izq, der, extra) {
-  if (izq < MARGEN) return 0;
-  if (der > DISENO.ancho - MARGEN) return extra;
-  return extra / 2;
-}
-
 export class HudBatalla {
   /**
    * @param {object} o
@@ -156,45 +142,15 @@ export class HudBatalla {
   }
 
   // ---------- disposición ----------
-  // Escala: el alto del diseño (1334) al alto de la ventana (o el ancho de 750 si es más estrecha).
+  // El HUD conserva el espacio original, incluso si el lienzo tiene redondeo de píxeles.
   medidas(canvas) {
-    const k = Math.min(canvas.height / DISENO.alto, canvas.width / DISENO.ancho);
-    return { k, ancho: canvas.width / k, base: [k, 0, 0, -k, 0, canvas.height] };
+    const base = baseCanvas(canvas);
+    return { k: base[0], ancho: DISENO.ancho, base };
   }
 
-  // Dibuja una pantalla de 750×1334 pegando cada pieza (hijos de la raíz o de su panel a pantalla
-  // completa) al borde más cercano: izquierda, centro o derecha.
-  dibujarAnclada(ctx, p, { base, ancho }) {
-    p.zonas = [];
-    const extra = ancho - DISENO.ancho;
-    const piezas = [];
-    const bajar = (n, m) => {
-      for (const h of [...n.hijos].sort((a, b) => a.zOrder - b.zOrder)) {
-        if (!h.visible) continue;
-        const [w, hh] = p.tamano(h);
-        if (h.hijos.length && (h.clase === 'Panel' || h.clase === 'Node') && w >= DISENO.ancho - 2 && hh >= DISENO.alto - 2) {
-          bajar(h, mul(m, matrizLocal(h, w, hh))); // panel contenedor a pantalla completa
-        } else piezas.push([h, m]);
-      }
-    };
-    bajar(p.raiz, matrizLocal(p.raiz, ...p.tamano(p.raiz)));
-    for (const [n, m] of piezas) {
-      const [w, h] = p.tamano(n);
-      const ml = mul(m, matrizLocal(n, w, h));
-      // Bordes de la pieza en el diseño: pegada a la izquierda si empieza cerca del borde izquierdo (o
-      // fuera), a la derecha si acaba cerca del derecho, y si no, centrada.
-      const xs = [[0, 0], [w, 0], [0, h], [w, h]].map(([x, y]) => ml[0] * x + ml[2] * y + ml[4]);
-      const izq = Math.min(...xs), der = Math.max(...xs);
-      const ancha = der - izq >= DISENO.ancho - 2; // cabeceras de lado a lado: se estiran
-      // Switch: los 3 botones de personaje van juntos (centrados), como en la fila del diseño.
-      let dx = /^(character_button_|image_icon_dead_)\d$/.test(n.nombre) ? extra / 2 : desplazamiento(izq, der, extra);
-      let mb = base;
-      if (ancha) {
-        mb = mul(base, [ancho / DISENO.ancho, 0, 0, 1, 0, 0]);
-        dx = 0;
-      }
-      p.dibujarNodo(ctx, n, mul(mul(mb, trasladar(dx, 0)), m), 1);
-    }
+  // Sin redistribución por bordes ni estiramiento de cabeceras.
+  dibujarAnclada(ctx, p, { base }) {
+    p.dibujar(ctx, base);
   }
 
   // Un widget (raíz 0×0) en un punto del canvas, con la escala del HUD.
@@ -372,7 +328,8 @@ export class HudBatalla {
     const c = document.getElementById('hud');
     if (!c || !this.ultimo) return;
     const r = c.getBoundingClientRect();
-    const x = (ev.clientX - r.left) * devicePixelRatio, y = (ev.clientY - r.top) * devicePixelRatio;
+    if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return;
+    const x = (ev.clientX - r.left) * c.width / r.width, y = (ev.clientY - r.top) * c.height / r.height;
     if (this.pausado) {
       const b = this.p.pausa.nodoEn(x, y, (n) => /^button_(cancel|retire_1|restart)$/.test(n.nombre));
       if (b?.nombre === 'button_cancel') this.reanudar();

@@ -54,10 +54,17 @@ export function invertir(m) {
 export const aplicar = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 
 /** Matriz local del nodo (en el espacio de su padre), con el tamaño efectivo (w, h). */
+const WIDGETS = new Set(['Button', 'CheckBox', 'ImageView', 'Text', 'TextField', 'TextBMFont', 'TextAtlas',
+  'LoadingBar', 'Slider', 'Panel', 'ScrollView', 'PageView', 'ListView']);
+const esWidget = (n) => WIDGETS.has(n.clase);
 export function matrizLocal(n, w, h) {
   const t = (-(n.rotX ?? 0) * Math.PI) / 180; // cocos: grados en sentido horario
   const c = Math.cos(t), s = Math.sin(t);
-  const r = [c * n.escalaX, s * n.escalaX, -s * n.escalaY, c * n.escalaY, n.x, n.y];
+  // Cocos 3.7 Widget::setFlippedX/Y altera la escala del nodo completo, no sólo su textura.
+  // Sprite conserva su reflejo de textura (sin reflejar hijos).
+  const sx = n.escalaX * (esWidget(n) && n.flipX ? -1 : 1);
+  const sy = n.escalaY * (esWidget(n) && n.flipY ? -1 : 1);
+  const r = [c * sx, s * sx, -s * sy, c * sy, n.x, n.y];
   return mul(r, trasladar(-n.anclaX * w, -n.anclaY * h));
 }
 
@@ -235,7 +242,7 @@ export class Pantalla {
   // Imagen que llena el rectángulo (0,0)-(w,h) del nodo (y hacia arriba).
   imagenEn(ctx, img, m, w, h, n) {
     if (!img || w <= 0 || h <= 0) return;
-    const fx = n.flipX ? -1 : 1, fy = n.flipY ? -1 : 1;
+    const fx = !esWidget(n) && n.flipX ? -1 : 1, fy = !esWidget(n) && n.flipY ? -1 : 1;
     ctx.setTransform(...mul(m, [fx, 0, 0, -fy, fx < 0 ? w : 0, fy < 0 ? 0 : h]));
     const t = imagenGamma(teñida(img, n.color), n.gamma ?? 1);
     if (n.scale9) this.nueve(ctx, t, w, h, n.scale9.insets);

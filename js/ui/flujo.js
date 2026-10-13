@@ -13,12 +13,12 @@ import { rutaWeb } from '../rutas.js';
 //
 // PROVISIONAL: qué .csb es cada pantalla y qué hace cada botón (por nombres de archivo y de nodos), qué
 // nodos se ocultan (los .csb guardan todas las variantes visibles, como en el editor), fondos de home y
-// menús, el parpadeo de "Link Start", la posición del botón de volver (en el .csb está fuera de
-// pantalla: entra con una animación de código), el orden del carrusel de capítulos y que no hay
+// menús, el parpadeo de "Link Start", el orden del carrusel de capítulos y que no hay
 // transiciones.
 
 import '../importador/comprobar.js'; // D68: sin datos (página pública sin importar) manda a la portada
 import { Pantalla, baseCanvas, clonar, apilar, DISENO, desplazarLista } from './pantalla.js';
+import { configurarPie } from './pie.js';
 import { recorrer } from './csb.js';
 import { imagen, fuenteTTF } from './recursos.js';
 import { crearApiLocal } from '../api/index.js';
@@ -207,7 +207,7 @@ function nodoBajo(x, y, filtro) {
 let toque = null;
 const punto = (ev) => {
   const r = canvas.getBoundingClientRect();
-  return [(ev.clientX - r.left) * devicePixelRatio, (ev.clientY - r.top) * devicePixelRatio];
+  return [(ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height];
 };
 canvas.addEventListener('pointerdown', (ev) => {
   estado.foco=null;canvas.focus({preventScroll:true});
@@ -271,19 +271,10 @@ addEventListener('keydown', (ev) => {
   else if(['PageUp','PageDown'].includes(ev.key)){const lista=estado.capas.flatMap(c=>c.pantalla?.zonas??[]).find(z=>z.n.interior)?.n;if(lista){ev.preventDefault();desplazarLista(lista,0,ev.key==='PageUp'?-500:500);}}
 });
 
-// Pie común (PROVISIONAL: en el .csb el botón de volver está en x = 0 con ancla 1, fuera de pantalla;
-// aquí se pone a la vista). `menu`: con la barra y los botones de home.
+// Pie común: conserva el ancla reflejada del CSB y la altura recuperada del código Android.
 async function pie({ menu = false, volver = true } = {}) {
   const p = await Pantalla.cargar('ui/common/common_footer_menu_s.csb');
-  // footer_grd: degradado teñido de negro que tapa los botones (¿fundido al abrir el menú?).
-  for (const n of ['button_footer_talk', 'button_town_history', 'button_footer_menu', 'image_new_lottery_icon', 'image_new_event_icon', 'footer_grd']) {
-    p.mostrar(n, false);
-  }
-  if (!menu) for (const n of ['footermenu_left', 'buttons']) p.mostrar(n, false);
-  p.mostrar('button_footer_return', volver);
-  p.buscar('button_footer_return').x = 173;
-  p.texto('text_current_room_title','Partida local');p.mostrar('text_current_room',false);
-  return p;
+  return configurarPie(p, { menu, volver });
 }
 
 // ---------- pantallas ----------
@@ -335,9 +326,6 @@ async function menuPrincipal(nombre,categoria='all'){
   await cargarCuenta();
   const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,banners:master().reclutamiento().banners}),pie()]);
   if(ticket!==estado.aperturaPrincipal)return;
-  // Multi/Herrería ya ocupan la zona baja; volver se mantiene fuera de sus botones.
-  if(nombre==='multi')Object.assign(vuelta.buscar('button_footer_return'),{x:104,y:55,escalaX:.6,escalaY:.6});
-  if(nombre==='upgrade')vuelta.buscar('button_footer_return').y=1160;
   const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria));
   const pendiente=k=>()=>avisoPrincipal(...PENDIENTES_MENU[k]);
   const acciones={button_footer_return:()=>home()};
@@ -520,9 +508,8 @@ async function mundo() {
     estado.mundo = id;
     capitulos();
   };
-  // El botón de volver va arriba a la izquierda: abajo taparía los botones de mundo.
-  const volver = vuelta.buscar('button_footer_return');
-  volver.y = 1000;
+  // Espacio para el regreso original a tamaño completo (adaptación de esta composición web).
+  for (let i = 1; i <= 3; i++) p.buscar(`button_world_${i}`).y += 48;
   escena('mundo', [bg, { pantalla: p }, { pantalla: vuelta }], {
     button_difficulty_1: cambiar, button_difficulty_2: cambiar, button_difficulty_3: cambiar,
     button_world_1: elegir(0), button_world_2: elegir(1), button_world_3: elegir(2),
@@ -845,7 +832,6 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
   const c = miembroEn(k); if (!c) return equipo(m);
   const catalogo = master(), pj = catalogo.personaje(c.character_id);
   const [bg, vuelta] = await Promise.all([fondo(FONDO_MENU), pie()]);
-  Object.assign(vuelta.buscar('button_footer_return'),{x:200,y:55,escalaX:.65,escalaY:.65});
   let comprando = false;
   const { pantalla, acciones } = await crearPantallaHabilidades({ personaje: pj, instancia: c,
     catalogo: catalogo.habilidades(), cuenta: estado.cuenta, master: catalogo, modo, seleccionado, elegido, mensaje,
