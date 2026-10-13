@@ -1749,8 +1749,8 @@ async function cargarMiembro(id, i, combat) {
   ch.esPersonaje = true;
   ch.arma = pj?.arma ?? 0; // character.f3
   ch.lider = i === 0;
-  // D60: pasivas del personaje (character.f36) y su efecto al empezar (HP máximo, medidor de guardia).
-  pasivas.registrar(ch, forzado ? [] : pasivasConEquipo(pj, ch.equiposAsignados));
+  // D78: f36 solo con estado de cuenta no0; f20 no exige ese desbloqueo.
+  pasivas.registrar(ch, forzado ? [] : pasivasConEquipo(pj, ch.equiposAsignados, progreso.instanciaDe(id)));
   pasivas.aplicarAlEmpezar(ch);
   ch.mpPorGolpe = pj?.mpPorGolpe ?? 0; // D64: character.f46
   iniciarMp(ch, ch.stats.mp, pasivas); // D64: máximo con pasivas de tipo 2 y MP lleno

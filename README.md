@@ -20,6 +20,10 @@ En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**,
 en la partida y sus estadísticas y pasivas se aplican en combate. Si la lista está vacía, primero
 necesitas obtener equipo en las misiones. Las mejoras y evoluciones siguen pendientes.
 
+Las pasivas propias del personaje requieren un desbloqueo registrado en la partida; el nivel
+por sí solo no las activa. El menú para desbloquearlas todavía está pendiente. Las pasivas de
+las piezas equipadas se aplican con sus condiciones de combate.
+
 ## Controles de combate
 
 - Flechas o WASD: moverse.

@@ -73,6 +73,12 @@ export class Progreso {
     return this.miembros.find((c) => c && String(c.character_id) === String(id))?.level ?? null;
   }
 
+  /** Instancia de cuenta autoritativa; un miembro ajeno no aporta estados de pasivas. */
+  instanciaDe(id) {
+    const c = this.miembros.find((c) => c && String(c.character_id) === String(id));
+    return c && this.cuenta?.characters.find((p) => p.uid === c.uid && p.character_id === c.character_id) || null;
+  }
+
   armaDe(id) {
     const c = this.miembros.find((c) => c && String(c.character_id) === String(id));
     return armaDeCuenta(this.cuenta, c, this.api?.backend?.master);

@@ -14,7 +14,7 @@
 import { MemoryStore } from './store.js';
 import { equipoCompatible, RANURAS_EQUIPO } from '../equipo.js';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 // Migraciones del estado guardado: MIGRACIONES[n] convierte un estado de versión n a n + 1.
 // Al cambiar el formato del estado se sube SCHEMA_VERSION y se agrega aquí la conversión.
@@ -26,6 +26,11 @@ const MIGRACIONES = {
   },
   2: (estado) => {
     for (const c of estado.characters) { c.armor_uid ??= null; c.accessory_uid ??= null; }
+    return estado;
+  },
+  3: (estado) => {
+    // D78: ausencia de un estado confirmado equivale a0, como el ctor nativo.
+    for (const c of estado.characters) c.passive_skill ??= [];
     return estado;
   },
 };
@@ -161,7 +166,7 @@ export class LocalBackend {
     const m = this.master.personaje(characterId);
     if (!m) fail('personaje_inexistente', `personaje ${characterId} no está en la master data`);
     const p = { uid: estado.siguienteUid++, character_id: characterId, level: 1, exp: 0,
-      weapon_uid: null, armor_uid: null, accessory_uid: null, created_at: this.now() };
+      weapon_uid: null, armor_uid: null, accessory_uid: null, passive_skill: [], created_at: this.now() };
     estado.characters.push(p);
     return p;
   }

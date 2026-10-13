@@ -1,19 +1,28 @@
-// Arma del inventario de la cuenta (D76). La asignación por UID es del backend
-// simulado; categoría/subtipo vienen de equipment y character_job.f12.
+// Equipo del inventario: asignación por UID del backend local; categorías y
+// compatibilidad del filtro nativo00b6d120→007724ec→0089d72c (D78).
 import { growthCurve } from './combate.js';
 export const RANURAS_EQUIPO = Object.freeze({ weapon: 'weapon_uid', armor: 'armor_uid', accessory: 'accessory_uid' });
 const categorias = { weapon: 1, armor: 2, accessory: 3 };
 export function armaCompatible(personaje, arma) {
-  return arma?.tipo === 1 && personaje?.subtipoArma > 0 && arma.subtipo === personaje.subtipoArma;
+  return !!personaje && arma?.tipo === 1 && subtipoCompatible(personaje, arma.subtipo);
+}
+
+function subtipoCompatible(personaje, subtipo) {
+  if (subtipo === 21) return true;
+  if (subtipo === 22) return personaje.genero === 1;
+  if (subtipo === 23) return personaje.genero === 2;
+  const job = personaje.arma;
+  if (Number.isInteger(job) && job >= 1 && job <= 9) return subtipo === job + 10;
+  if (job === 10) return subtipo === 11;
+  return job === 11 && (subtipo === 40 || subtipo === 41);
 }
 
 export function equipoCompatible(personaje, equipo, ranura) {
   if (!personaje || !Object.hasOwn(RANURAS_EQUIPO, ranura) || equipo?.tipo !== categorias[ranura]) return false;
   if (ranura === 'weapon') return armaCompatible(personaje, equipo);
-  if (ranura === 'accessory') return equipo.subtipo === 31;
-  // Regla conservadora derivada del catálogo:21 común,22/23 según género.
-  // La comparación completa del cliente nativo todavía no está localizada.
-  return equipo.subtipo === 21 || ([1, 2].includes(personaje.genero) && equipo.subtipo === 21 + personaje.genero);
+  // 007724ec añade categoría3 directamente; no aplica filtro de subtipo.
+  if (ranura === 'accessory') return true;
+  return subtipoCompatible(personaje, equipo.subtipo);
 }
 
 /** Resuelve una asignación real; referencias ausentes, ajenas o incompatibles no equipan nada. */
@@ -60,7 +69,19 @@ export const statsEquipo = statsArma;
 export const sumarStatsEquipo = (base, equipos = []) => equipos.reduce(sumarStatsArma, { ...base });
 
 // D77,006954b4→00827ee4→0070507c: f20 de cada pieza, sin filtro por nivel.
-// La selección propia del personaje (0069539c) sigue provisional en el port.
-export const pasivasConArma = (personaje, arma) => pasivasConEquipo(personaje, arma ? [arma] : []);
-export const pasivasConEquipo = (personaje, equipos = []) => [...(personaje?.pasivas ?? []),
+// D78: ctor00604728 inicializa estados0; JSON00693ebc/00693898 modifica
+// la primera ranura del ID. Repetir el ID sobrescribe su estado, no otra ranura.
+export function pasivasDelPersonaje(personaje, instancia) {
+  const ids = (personaje?.pasivas ?? []).slice(0, 3), estados = ids.map(() => 0);
+  for (const r of Array.isArray(instancia?.passive_skill) ? instancia.passive_skill : []) {
+    if (!Number.isSafeInteger(r?.master_passive_skill_id) || r.master_passive_skill_id <= 0
+      || !Number.isInteger(r.status) || r.status < -2147483648 || r.status > 2147483647) continue;
+    const i = ids.indexOf(r.master_passive_skill_id);
+    if (i >= 0) estados[i] = r.status;
+  }
+  return ids.filter((id, i) => id > 0 && estados[i] !== 0);
+}
+
+export const pasivasConArma = (personaje, arma, instancia) => pasivasConEquipo(personaje, arma ? [arma] : [], instancia);
+export const pasivasConEquipo = (personaje, equipos = [], instancia) => [...pasivasDelPersonaje(personaje, instancia),
   ...equipos.flatMap((e) => e.pasivas ?? [])];
