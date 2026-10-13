@@ -23,6 +23,7 @@ import { recorrer } from './csb.js';
 import { imagen, fuenteTTF } from './recursos.js';
 import { crearApiLocal } from '../api/index.js';
 import { characterStats } from '../combate.js';
+import { armaCompatible, armaDeCuenta, sumarStatsArma, statsArma } from '../equipo.js';
 import { tomarResultado } from './regreso.js';
 import { audio } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
@@ -131,7 +132,7 @@ async function fondo(ruta) {
 function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null, largas = {} } = {}) {
   Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas });
   audio.escena(nombre);
-  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : nombre === 'home' ? 'home' : ['equipo', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
+  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : nombre === 'home' ? 'home' : ['equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
   document.title = `SAO MD · ${nombre}`;
 }
 
@@ -543,10 +544,14 @@ async function equipo(m) {
     widget.mostrar('character_widget_1', false, w);
     widget.mostrar('node_assist_character_thumbnail', false, w);
     widget.mostrar('dummy_character', false, w);
-    // Botones de armas, habilidades, ranuras de skill y color: funciones que el juego web aún no tiene.
+    // Variantes duplicadas de armas y las funciones todavía pendientes.
     for (const [nodo] of recorrer(w)) if (/^button_(arms|ability|slot_skill|color)/.test(nodo.nombre)) nodo.visible = false;
     if (lleno) {
-      const st = characterStats({ personajes: { [c.character_id]: ficha } }, c.character_id, c.level);
+      const botonArma = widget.buscar('button_arms_edit', w);
+      if (botonArma) { botonArma.visible = true; botonArma.nombre = `arma_${k}`; }
+      widget.texto('text_arms_edit', 'Arma', w);
+      const st = sumarStatsArma(characterStats({ personajes: { [c.character_id]: ficha } }, c.character_id, c.level),
+        armaDeCuenta(estado.cuenta, c, master()));
       widget.texto('text_character_name', nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, ''), w);
       widget.texto('level_number', c.level, w);
       widget.texto('hp_number', st.hp, w);
@@ -571,8 +576,58 @@ async function equipo(m) {
     button_left_arrow: mover(-1), button_right_arrow: mover(1),
     button_character_list: () => listaPersonajes(m),
     button_party_edit: () => listaPersonajes(m),
+    arma_0: () => listaArmas(m, 0), arma_1: () => listaArmas(m, 1), arma_2: () => listaArmas(m, 2),
     button_footer_return: () => (m ? preparacion(m) : home()),
   });
+}
+
+// D76: recursos originales de lista; asignaciones/acciones son del backend local.
+async function listaArmas(m, k = 0, mensaje = '') {
+  await cargarCuenta();
+  const c = miembroEn(k); if (!c) return equipo(m);
+  const [bg, p] = await Promise.all([fondo(FONDO_MENU), Pantalla.cargar('ui/equip/equip_list_s.csb')]);
+  for (const n of ['image_body_material', 'image_header_material', 'image_footer_material', 'layout_contents_material',
+    'image_note', 'button_sort', 'image_title']) p.mostrar(n, false);
+  p.texto('text_possession_equipment', 'Armas');
+  const catalogo = master(), pj = catalogo.personaje(c.character_id);
+  const armas = estado.cuenta.equipment.filter((e) => armaCompatible(pj, catalogo.equipo(e.equipment_id)));
+  p.texto('possession_equipment_number', armas.length);
+  p.raiz.hijos.push(nodoTexto('titulo_armas', `Arma · ${nombrePersonaje(c.character_id).replace(/^\[[^\]]*\]\s*/, '')}`, 375, 1308, 32));
+  const equipada = armaDeCuenta(estado.cuenta, c, catalogo);
+  const aviso = mensaje || (armas.length ? `Equipada: ${equipada?.nombre ?? 'Sin arma'}` : 'No tienes armas compatibles. Obtén equipo en las misiones.');
+  p.raiz.hijos.push(nodoTexto('estado_armas', aviso, 375, 1190, 25,
+    mensaje ? { r: 255, g: 180, b: 160 } : { r: 210, g: 225, b: 240 },
+    { ancho: 710, alto: 70, tamPropio: true }));
+  const sv = p.buscar('equipment_list'), filas = [{ uid: null }, ...armas];
+  const alto = Math.max(sv.alto, filas.length * 116);
+  const acciones = { button_close: () => equipo(m), button_footer_return: () => equipo(m) };
+  let guardando = false;
+  sv.hijos = filas.map((e, i) => {
+    const f = e.uid == null ? null : catalogo.equipo(e.equipment_id);
+    const dueño = e.uid == null ? null : estado.cuenta.characters.find((x) => x.uid !== c.uid && x.weapon_uid === e.uid);
+    const actual = (c.weapon_uid ?? null) === e.uid;
+    const nombre = e.uid == null ? 'Sin arma' : f.nombre;
+    const st = f ? statsArma(f, e.level ?? 1) : null;
+    const detalle = e.uid == null ? 'Retirar el arma equipada' : `Lv ${e.level ?? 1} · R${f.rareza} · ATK ${st.atk ?? 0}${actual ? ' · Equipada' : dueño ? ' · En uso' : ''}`;
+    const n = { ...base, clase: 'Panel', nombre: `elegir_arma_${i}`, x: 10, y: alto - (i + 1) * 116,
+      ancho: 700, alto: 108, anclaX: 0, anclaY: 0, tactil: !dueño,
+      panel: { tipoColor: 1, color: actual ? { r: 35, g: 78, b: 98 } : { r: 25, g: 32, b: 45 }, opacidad: 235 },
+      hijos: [nodoTexto('nombre_arma', nombre, 18, 73, 27, { r: 245, g: 245, b: 250 },
+        { ancho: 664, alto: 38, tamPropio: true, anclaX: 0, alineH: 0 }),
+      nodoTexto('detalle_arma', detalle, 18, 30, 22, { r: 160, g: 195, b: 210 },
+        { ancho: 664, alto: 30, tamPropio: true, anclaX: 0, alineH: 0 })] };
+    if (!dueño) acciones[n.nombre] = async () => {
+      if (guardando) return; guardando = true;
+      try {
+        await estado.api.request('character/weapon', { character_uid: c.uid, weapon_uid: e.uid });
+        await cargarCuenta(); await equipo(m);
+      } catch (err) { await listaArmas(m, k, err.message); }
+    };
+    return n;
+  });
+  sv.interior = { ancho: sv.ancho, alto, direccion: 1 };
+  await p.precargar();
+  escena('armas', [bg, { pantalla: p }], acciones);
 }
 
 // Personajes de la cuenta (character_list_s): miniaturas; tocar una la pone en el puesto `k` del equipo (en los

@@ -12,12 +12,19 @@
 // es PROVISIONAL: diseño propio para que el juego funcione, no el formato original.
 
 import { MemoryStore } from './store.js';
+import { armaCompatible } from '../equipo.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // Migraciones del estado guardado: MIGRACIONES[n] convierte un estado de versión n a n + 1.
 // Al cambiar el formato del estado se sube SCHEMA_VERSION y se agrega aquí la conversión.
-const MIGRACIONES = {};
+const MIGRACIONES = {
+  1: (estado) => {
+    for (const c of estado.characters) c.weapon_uid ??= null;
+    for (const e of estado.equipment) e.level ??= 1;
+    return estado;
+  },
+};
 
 // Respuesta real del DummyDriver (FUN_00ab125c). CONFIRMADA.
 const RESPUESTA_QUEST_START = { data: { diamond: { continue: 0, treasure_box: 0 } } };
@@ -98,12 +105,15 @@ export class LocalBackend {
     if (estado.schema > SCHEMA_VERSION) {
       fail('schema_nuevo', `la cuenta es de una versión más nueva (${estado.schema} > ${SCHEMA_VERSION})`);
     }
+    let migrado = false;
     while (estado.schema < SCHEMA_VERSION) {
       const migrar = MIGRACIONES[estado.schema];
       if (!migrar) fail('schema_sin_migracion', `no hay migración desde la versión ${estado.schema}`);
       estado = migrar(estado);
       estado.schema += 1;
+      migrado = true;
     }
+    if (migrado) await this.guardar(estado);
     return estado;
   }
 
@@ -146,7 +156,7 @@ export class LocalBackend {
   nuevoPersonaje(estado, characterId) {
     const m = this.master.personaje(characterId);
     if (!m) fail('personaje_inexistente', `personaje ${characterId} no está en la master data`);
-    const p = { uid: estado.siguienteUid++, character_id: characterId, level: 1, exp: 0, created_at: this.now() };
+    const p = { uid: estado.siguienteUid++, character_id: characterId, level: 1, exp: 0, weapon_uid: null, created_at: this.now() };
     estado.characters.push(p);
     return p;
   }
@@ -172,7 +182,7 @@ export class LocalBackend {
         break;
       case TIPO_RECOMPENSA.EQUIPO:
         for (let i = 0; i < n; i++) {
-          estado.equipment.push({ uid: estado.siguienteUid++, equipment_id: r.id, created_at: this.now() });
+          estado.equipment.push({ uid: estado.siguienteUid++, equipment_id: r.id, level: 1, created_at: this.now() });
         }
         break;
       case TIPO_RECOMPENSA.DIAMANTE:
@@ -235,6 +245,27 @@ function vistaInventario(estado) {
 // `nuevo` es el estado a guardar (se guarda entero al final: cada petición es atómica).
 
 const RUTAS = {
+  // D76: contrato propio del servidor simulado; no afirma el formato del servidor original.
+  'character/weapon': {
+    cuenta: true,
+    fn(estado, { character_uid, weapon_uid }) {
+      if (!Number.isSafeInteger(character_uid) || character_uid <= 0) fail('personaje_invalido', 'personaje inválido');
+      const c = estado.characters.find((c) => c.uid === character_uid);
+      if (!c) fail('personaje_ajeno', 'el personaje no pertenece a la cuenta');
+      if (weapon_uid !== null) {
+        if (!Number.isSafeInteger(weapon_uid) || weapon_uid <= 0) fail('arma_invalida', 'arma inválida');
+        const e = estado.equipment.find((e) => e.uid === weapon_uid);
+        if (!e) fail('equipo_ajeno', 'el arma no pertenece a la cuenta');
+        if (!armaCompatible(this.master.personaje(c.character_id), this.master.equipo(e.equipment_id))) {
+          fail('arma_incompatible', 'ese equipo no es un arma compatible con el personaje');
+        }
+        const dueño = estado.characters.find((p) => p.uid !== c.uid && p.weapon_uid === weapon_uid);
+        if (dueño) fail('arma_en_uso', `el arma está equipada por ${this.master.personaje(dueño.character_id)?.nombre ?? 'otro personaje'}`);
+      }
+      c.weapon_uid = weapon_uid;
+      return { respuesta: { data: { character: copy(c) } }, nuevo: estado };
+    },
+  },
   // Crear cuenta. Respuesta CONFIRMADA offline: cuerpo vacío. Error si ya existe: PROVISIONAL.
   'user/register': {
     cuenta: false,

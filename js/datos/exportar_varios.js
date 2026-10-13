@@ -4,6 +4,7 @@
 import { get, o, verdad, esEntero, igual, ordenar, aJSON, aJSONIndentado } from './py.js';
 import { normalHits, porId, porNivel } from './comun.js';
 import { Decoder } from './master_data.js';
+import { catalogoEquipo } from './exportar_equipo.js';
 
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -119,17 +120,16 @@ export async function exportarInterfaz(fuente, salida) {
 // ---- exportar_api.py (F3, D41): api_master.json ----
 export async function exportarApi(fuente, salida) {
   const characters = {};
-  for (const r of await fuente.md('character')) characters[r.f0] = { nombre: get(r, 'f2'), rareza: get(r, 'f1'), arma: get(r, 'f3'), elemento: get(r, 'f9') };
+  const jobs = porId(await fuente.md('character_job'));
+  for (const r of await fuente.md('character')) characters[r.f0] = { nombre: get(r, 'f2'), rareza: get(r, 'f1'), arma: get(r, 'f3'),
+    subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9') };
   const levels = ordenar(await fuente.md('character_level'), (r) => r.f0);
   const expLevel = levels.map((r) => get(r, 'f2', 0));
   const maxLevel = {};
   for (const r of await fuente.md('character_max_level_rarity')) maxLevel[r.f1] = r.f2;
   const items = {};
   for (const r of await fuente.md('item')) items[r.f0] = { nombre: get(r, 'f4'), tipo: get(r, 'f2') };
-  const equipment = {};
-  for (const r of await fuente.md('equipment')) equipment[r.f0] = {
-    nombre: get(r, 'f6'), rareza: get(r, 'f1'), correccionSalida: get(r, 'f26', 0), // 00699818.
-  };
+  const equipment = await catalogoEquipo(fuente);
 
   const quests = new Map();
   for (const r of (await fuente.md('quest')).f0) {
