@@ -7,6 +7,7 @@ import { Decoder } from './master_data.js';
 import { catalogoEquipo } from './exportar_equipo.js';
 import { catalogoHabilidades } from './exportar_habilidades.js';
 import {exportarEfectosHistoria} from './exportar_efectos_historia.js';
+import {metadataHistorias} from './metadata_historia.js';
 
 const esDict = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -32,6 +33,8 @@ async function capas(fuente, r) {
 
 export async function exportarHistorias(fuente, salida) {
   await exportarEfectosHistoria(fuente,salida);
+  const questStories=await fuente.md('adventure_quest_story');
+  const metadata=metadataHistorias(questStories,await fuente.md('adventure_character_story'));
   const imagenes = porId(await fuente.md('adventure_story_character_image'));
   const historias = new Map();
   for (const s of await fuente.md('adventure_story_content')) {
@@ -61,11 +64,11 @@ export async function exportarHistorias(fuente, salida) {
       else lineas.push({ linea: get(ob, 'linea'), entradas: [ob] });
     }
     for (const ln of lineas) for (const ob of ln.entradas) delete ob.linea;
-    await salida.escribir(`historias/${hid}.json`, aJSON({ id: hid, lineas }));
+    await salida.escribir(`historias/${hid}.json`, aJSON({ id: hid,...metadata[hid], lineas }));
   }
 
   const misiones = {};
-  for (const r of await fuente.md('adventure_quest_story')) {
+  for (const r of questStories) {
     for (const e of r.f1) {
       const k = String(e.f2);
       (misiones[k] ??= []).push({

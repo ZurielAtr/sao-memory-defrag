@@ -11,10 +11,10 @@ import { rutaWeb } from '../rutas.js';
 // PROVISIONAL (sin leer en el binario): huecos 1 izquierda, 2 derecha, 3 centro y 4 sin imagen (sin f8, el 1);
 // los personajes siguen en pantalla hasta que otro ocupa su hueco o cambia el fondo; el que no habla se
 // oscurece; la ilustración va en el sitio del objeto; el texto sale a VELOCIDAD caracteres/s.
-// Audio: D69. Registro y efectos confirmados: D81; elecciones y efectos restantes pendientes.
+// Audio: D69. Registro/fades: D81; SpriteStudio, resumen y permisos: D82. Elecciones y otros efectos pendientes.
 
 import { Pantalla, baseCanvas, desplazarLista } from './pantalla.js';
-import {crearRegistro,crearSalto,registroVisible} from './historia_menus.js';
+import {crearRegistro,crearSalto,crearResumen,registroVisible} from './historia_menus.js';
 import {EfectosHistoria} from './historia_efectos.js';
 import { audio, motor } from '../audio/index.js';
 import { montarAjustes } from '../audio/ajustes.js';
@@ -63,8 +63,11 @@ export class Historia {
     this.terminada = false;
     this.registro = [];
     this.modal = null;
-    this.efectos=new EfectosHistoria(efectos);
+    this.efectos=new EfectosHistoria(efectos,{cargarAnimacion:async e=>{
+      const {cargarAnimacionHistoria}=await import('./historia_animacion.js');return cargarAnimacionHistoria(e);
+    }});
     this.p.mostrar('button_log', true);
+    this.p.mostrar('button_skip',datos.permitirSalto!==false);
     this.fondo = p.buscar('background');
     this.objeto = p.buscar('item');
     for (const n of Object.values(HUECOS)) p.buscar(n).imagen = null;
@@ -205,7 +208,7 @@ export class Historia {
   /** Botón de la pantalla bajo (x, y) del canvas (px), o null. */
   botonEn(x, y) {
     const p=this.modal?.pantalla??this.p;
-    return p.nodoEn(x,y,n=>['button_skip','button_log','button_close','button_ok'].includes(n.nombre)||n.nombre.startsWith('registro_voz_'))?.nombre??null;
+    return p.nodoEn(x,y,n=>['button_skip','button_log','button_close','button_ok','text_confirm'].includes(n.nombre)||n.nombre.startsWith('registro_voz_'))?.nombre??null;
   }
 
   async abrirRegistro(){
@@ -224,11 +227,15 @@ export class Historia {
 
   async confirmarSalto(){
     if(this.terminada||this.modal)return;
-    const modal=this.modal={tipo:'salto',pantalla:null};
+    const permitido=this.datos.permitirSalto!==false;
+    const tipo=!permitido?'aviso':this.datos.resumen?'resumen':'salto';
+    const modal=this.modal={tipo,pantalla:null};
     if(!this._avanzando)this.cancelarSonidoLinea();
-    try{const p=await crearSalto();if(!this.terminada&&this.modal===modal)modal.pantalla=p;}
+    try{const p=await (tipo==='resumen'?crearResumen(this.datos):crearSalto({permitido}));if(!this.terminada&&this.modal===modal)modal.pantalla=p;}
     catch(err){if(this.modal===modal)this.modal=null;console.warn('historia: no se pudo abrir confirmación',err);}
   }
+
+  listaModal(){return this.modal?.pantalla?.buscar('list_view_log')??this.modal?.pantalla?.buscar('list_view_resumen');}
 
   repetirVoz(nombre){
     const id=this.modal?.pantalla?.buscar(nombre)?._voz;if(!(id>0))return;
@@ -255,10 +262,10 @@ export class Historia {
         const x = ((ev.clientX - r.left) * canvas.width) / r.width, y = ((ev.clientY - r.top) * canvas.height) / r.height;
         const boton=this.botonEn(x,y);
         if(this.modal){
-          const lista=this.modal.pantalla?.buscar('list_view_log');
+          const lista=this.listaModal();
           if(lista&&this.modal.pantalla.nodoEn(x,y,n=>n===lista)) this.arrastreRegistro={x,y,boton,desde:lista._desplaz??0,movido:false};
           else if(boton==='button_close')this.cerrarRegistro();
-          else if(boton==='button_ok'&&this.modal.tipo==='salto')this.saltar();
+          else if(boton==='button_ok'&&['salto','resumen'].includes(this.modal.tipo))this.saltar();
         }else if(boton==='button_skip')void this.confirmarSalto();
         else if(boton==='button_log')void this.abrirRegistro();
         else void this.avanzar();
@@ -269,9 +276,11 @@ export class Historia {
         if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
         if(this.modal){
           if(ev.code==='Escape')this.cerrarRegistro();
-          else if(this.modal.tipo==='salto'&&['Enter','NumpadEnter'].includes(ev.code))this.saltar();
+          else if(['Enter','NumpadEnter'].includes(ev.code)){
+            if(['salto','resumen'].includes(this.modal.tipo))this.saltar();else if(this.modal.tipo==='aviso')this.cerrarRegistro();else return;
+          }
           else if(['ArrowUp','ArrowDown','PageUp','PageDown'].includes(ev.code)){
-            const n=this.modal.pantalla?.buscar('list_view_log');if(n)desplazarLista(n,0,(['ArrowUp','PageUp'].includes(ev.code)?-1:1)*(ev.code.startsWith('Page')?500:100));
+            const n=this.listaModal();if(n)desplazarLista(n,0,(['ArrowUp','PageUp'].includes(ev.code)?-1:1)*(ev.code.startsWith('Page')?500:100));
           }else return;
         }else if(ev.code==='KeyL')void this.abrirRegistro();
         else if (['Space', 'Enter', 'KeyZ', 'NumpadEnter'].includes(ev.code)) void this.avanzar();
@@ -287,13 +296,13 @@ export class Historia {
         const t=this.arrastreRegistro;if(!t)return;
         const r=canvas.getBoundingClientRect(),y=(ev.clientY-r.top)*canvas.height/r.height;
         if(Math.abs(y-t.y)>12*devicePixelRatio)t.movido=true;
-        if(t.movido){const n=this.modal?.pantalla?.buscar('list_view_log');if(n)desplazarLista(n,0,(t.y-y)/baseCanvas(canvas)[0],{y:t.desde});}
+        if(t.movido){const n=this.listaModal();if(n)desplazarLista(n,0,(t.y-y)/baseCanvas(canvas)[0],{y:t.desde});}
         ev.stopImmediatePropagation();
       };
-      const soltar=(ev)=>{const t=this.arrastreRegistro;this.arrastreRegistro=null;if(t&&!t.movido&&t.boton?.startsWith('registro_voz_'))this.repetirVoz(t.boton);if(this.modal||t)ev.stopImmediatePropagation();};
+      const soltar=(ev)=>{const t=this.arrastreRegistro;this.arrastreRegistro=null;if(t&&!t.movido){if(t.boton?.startsWith('registro_voz_'))this.repetirVoz(t.boton);else if(t.boton==='text_confirm'&&this.modal?.tipo==='resumen')this.saltar();}if(this.modal||t)ev.stopImmediatePropagation();};
       const cancelar=(ev)=>{this.arrastreRegistro=null;if(this.modal)ev.stopImmediatePropagation();};
       const rueda=(ev)=>{
-        if(!this.modal)return;const n=this.modal.pantalla?.buscar('list_view_log');if(n)desplazarLista(n,0,ev.deltaY);
+        if(!this.modal)return;const n=this.listaModal();if(n)desplazarLista(n,0,ev.deltaY);
         ev.preventDefault();ev.stopImmediatePropagation();
       };
       addEventListener('pointermove',mover,true);addEventListener('pointerup',soltar,true);addEventListener('wheel',rueda,{capture:true,passive:false});

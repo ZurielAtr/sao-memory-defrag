@@ -52,8 +52,9 @@ se aplican con sus condiciones de combate.
 
 En los diálogos, Espacio/Intro/Z completan el texto o avanzan; Log/L abre el
 registro con desplazamiento y repetición de las voces disponibles. Volver/Escape
-cierra el registro. Skip/Escape pide confirmación para saltar la historia:
-Seguir leyendo regresa y Saltar/Intro termina. Algunos efectos siguen pendientes.
+cierra el registro. Cuando la historia permite saltar, Skip/Escape muestra su
+resumen o una confirmación: Seguir leyendo regresa y Saltar/Intro termina.
+Si no permite saltar, Escape muestra un aviso. Algunos efectos siguen pendientes.
 
 ## Qué contiene este repositorio
 

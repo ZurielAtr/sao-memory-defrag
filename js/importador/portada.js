@@ -258,4 +258,4 @@ window.__portada = { importar, regenerar };
 
 const e = await pintarEstado();
 if (e && ('serviceWorker' in navigator)) await registrarSW().catch(() => null);
-if (e && (params.has('regenerar') || (e.version ?? 0) < VERSION_DATOS)) await regenerar();
+if (e && (e.regenerando || params.has('regenerar') || (e.version ?? 0) < VERSION_DATOS)) await regenerar();

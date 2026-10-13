@@ -9,6 +9,7 @@ import { generarDatos, VERSION_DATOS } from '../datos/generar.js';
 import { Fuente } from '../datos/fuente.js';
 import { BlobRemoto } from './blob_remoto.js';
 import { carpeta, Escritor, Indice, almacenOPFS, leer, borrarTodo, RAIZ } from './opfs.js';
+import {actualizarImportacion} from './actualizacion.js';
 
 const enviar = (m) => postMessage(m);
 const hex = (b) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
@@ -65,11 +66,11 @@ async function regenerar() {
   const estado = base && (await json(base, 'estado.json'));
   const entradas = base && (await json(base, 'indice.json'));
   if (!estado || !entradas) throw new Error(`no hay nada importado en ${RAIZ}`);
-  await generar(base, new Indice(entradas), deHex(estado.claveDatos));
-  estado.version = VERSION_DATOS;
-  estado.regenerado = new Date().toISOString();
-  await new Escritor(base).escribir('estado.json', JSON.stringify(estado));
-  return estado;
+  return actualizarImportacion(estado,{
+    version:VERSION_DATOS,
+    generar:()=>generar(base,new Indice(entradas),deHex(estado.claveDatos)),
+    escribir:e=>new Escritor(base).escribir('estado.json',JSON.stringify(e)),
+  });
 }
 
 onmessage = async (ev) => {

@@ -41,8 +41,9 @@ The assignment of skills to nodes and the growth direction of limit-break branch
 
 During dialogue, Space/Enter/Z complete the text or advance. Log/L opens the
 scrollable dialogue log and lets you replay available voices. Back/Escape closes
-the log. Skip/Escape asks for confirmation: Keep reading returns to the dialogue;
-Skip/Enter ends it. Some dialogue effects are still pending.
+the log. When skipping is allowed, Skip/Escape shows the story summary or a
+confirmation: Keep reading returns to the dialogue; Skip/Enter ends it.
+If skipping is unavailable, Escape shows a notice. Some effects are still pending.
 
 ## What this repository contains
 
