@@ -31,6 +31,9 @@ import { crearPantallaHabilidades } from './habilidades.js';
 import { sumarStatsArbol } from '../habilidades.js';
 import { clavesDisponibles, estadoMision, estadoCapitulo } from './disponibilidad_misiones.js';
 import {DESTINOS_FOOTER,DESTINOS_TOWN,PENDIENTES_MENU,crearMenuPrincipal,crearAvisoPrincipal,objetivosMenu} from './menus_principales.js';
+import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.js';
+import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
+import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -327,7 +330,7 @@ async function avisoPrincipal(titulo,mensaje){
 async function menuPrincipal(nombre,categoria='all'){
   const ticket=++estado.aperturaPrincipal;
   await cargarCuenta();
-  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria}),pie()]);
+  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,banners:master().reclutamiento().banners}),pie()]);
   if(ticket!==estado.aperturaPrincipal)return;
   // Multi/Herrería ya ocupan la zona baja; volver se mantiene fuera de sus botones.
   if(nombre==='multi')Object.assign(vuelta.buscar('button_footer_return'),{x:104,y:55,escalaX:.6,escalaY:.6});
@@ -341,9 +344,10 @@ async function menuPrincipal(nombre,categoria='all'){
   if(nombre==='taberna'){
     for(const k of ['all','chara','weapon'])acciones['button_category_'+k]=()=>menuPrincipal('taberna',k);
     acciones.consultar_taberna=categoria==='chara'?()=>listaPersonajes(null,0,{volver:()=>menuPrincipal(nombre,categoria),seleccionar:false}):abrirEquipo;
+    if(categoria!=='weapon')for(const b of master().reclutamiento().banners)acciones['banner_'+b.id]=()=>reclutamiento(b.id);
   }
   if(nombre==='upgrade'){
-    for(const k of ['button_progress','button_forge','button_sell','button_exchange'])acciones[k]=pendiente(k);
+    for(const [k,modo]of Object.entries({button_forge:'strengthen',button_progress:'evolve',button_sell:'sell',button_exchange:'exchange'}))acciones[k]=()=>operacionEquipo(modo);
     acciones.button_party_organization=abrirEquipo;
     acciones.button_equipment_list=()=>{estado.volverEquipo=()=>menuPrincipal(nombre);return listaEquipo(null,0);};
     const abrirHabilidad=modo=>{estado.volverEquipo=()=>menuPrincipal(nombre);return habilidades(null,0,modo);};
@@ -356,6 +360,108 @@ async function menuPrincipal(nombre,categoria='all'){
   const bg=await fondo(nombre==='town'?FONDO_HOME:FONDO_MENU);
   if(ticket!==estado.aperturaPrincipal)return;
   escena(nombre,[bg,{pantalla:p},{pantalla:vuelta}],acciones);
+}
+
+async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos':'base',uids:[],uid:null,nivel:null,destino:null,mensaje:''}){
+ const ticket=++estado.aperturaPrincipal;await cargarCuenta();
+ if(ticket!==estado.aperturaPrincipal)return;
+ const cat=master(),cuenta=estado.cuenta,base=cuenta.equipment.find(e=>e.uid===o.uid),ficha=base&&cat.equipo(base.equipment_id);
+ const params=modo==='strengthen'?{equipment_uid:o.uid,level:o.nivel}:modo==='evolve'?{equipment_uid:o.uid,material_uids:o.uids}:
+  modo==='sell'?{equipment_uids:o.uids}:{equipment_id:o.destino,material_uids:o.uids};
+ const q=consultarOperacion(cat,cuenta,modo,params);
+ let filas,controles=[];
+ const protegida=e=>equipado(cuenta,e.uid)||e.favorite||e.locked||e.protected||e.is_locked;
+ const nombre=e=>`${cat.equipo(e.equipment_id)?.nombre??e.equipment_id} · Lv${e.level} · #${e.uid}`;
+ if(o.fase==='destinos'){
+  filas=(cat.operaciones().intercambio??[]).filter(r=>cat.equipo(r.id)).map(r=>({id:r.id,texto:cat.equipo(r.id).nombre,activo:!cuenta.equipment_exchanged_ids?.includes(r.id)}));
+ }else{
+  let propias=cuenta.equipment;
+  if(o.fase==='materiales'&&modo==='evolve')propias=propias.filter(e=>e.uid!==o.uid&&e.equipment_id===base?.equipment_id);
+  if(o.fase==='materiales'&&modo==='exchange')propias=propias.filter(e=>{const m=cat.equipo(e.equipment_id),d=cat.equipo(o.destino);return m?.tipo===1&&m.intercambiable&&e.equipment_id!==o.destino&&e.equipment_id!==d?.evolucion;});
+  filas=propias.map(e=>({id:e.uid,texto:(protegida(e)&& (modo==='sell'||o.fase==='materiales')?'En uso/protegida · ':'')+nombre(e),activo:!((modo==='sell'||o.fase==='materiales')&&protegida(e))}));
+ }
+ const abrir=cambios=>operacionEquipo(modo,{...o,...cambios,mensaje:''});
+ const acciones={button_footer_return:()=>menuPrincipal('upgrade'),pagina_anterior:()=>abrir({pagina:Math.max(0,o.pagina-1)}),pagina_siguiente:()=>abrir({pagina:Math.min(Math.ceil(filas.length/6)-1,o.pagina+1)})};
+ for(const r of filas)if(r.activo!==false)acciones['pieza_'+r.id]=()=>{
+  if(o.fase==='destinos')return abrir({destino:r.id,fase:'materiales',uids:[],pagina:0});
+  if(modo==='sell'||o.fase==='materiales')return abrir({uids:o.uids.includes(r.id)?o.uids.filter(id=>id!==r.id):[...o.uids,r.id]});
+  const e=cuenta.equipment.find(e=>e.uid===r.id);return abrir({uid:r.id,nivel:Math.min(e.level+1,cat.equipo(e.equipment_id).nivelMax),uids:[]});
+ };
+ if(modo==='strengthen'&&base){
+  controles=[{id:'nivel_uno',texto:`Lv${Math.min(base.level+1,ficha.nivelMax)}`},{id:'nivel_cinco',texto:`Lv${Math.min(base.level+5,ficha.nivelMax)}`},{id:'nivel_maximo',texto:`Máx. Lv${ficha.nivelMax}`}];
+  acciones.nivel_uno=()=>abrir({nivel:Math.min(base.level+1,ficha.nivelMax)});acciones.nivel_cinco=()=>abrir({nivel:Math.min(base.level+5,ficha.nivelMax)});acciones.nivel_maximo=()=>abrir({nivel:ficha.nivelMax});
+ }
+ if(modo==='evolve'&&base){controles=[{id:'elegir_copias',texto:o.fase==='materiales'?'Cambiar pieza':'Elegir copias'}];acciones.elegir_copias=()=>abrir({fase:o.fase==='materiales'?'base':'materiales',pagina:0});}
+ if(modo==='exchange'&&o.destino){controles=[{id:'elegir_destino',texto:'Cambiar destino'}];acciones.elegir_destino=()=>abrir({fase:'destinos',pagina:0,uids:[]});}
+ const detalles=q.destino?cat.equipo(q.destino):null;
+ let detalle=modo==='exchange'?`Catálogo histórico · ${detalles?.nombre??'Elige el arma que recibirás'}\nCuatro armas intercambiables · una vez por destino`:
+  modo==='sell'?`${o.uids.length} piezas · recibirás ${Math.max(0,-q.col)} Col`:base?`${ficha.nombre}\n${modo==='strengthen'?`Lv${base.level} → ${o.nivel}`:`Evolución → ${detalles?.nombre??'sin destino'} · Lv1`}`:'Selecciona una pieza';
+ if(q.col>0)detalle+=`\nCoste: ${q.col} Col${q.factorCampana<1?' · campaña '+Math.round((1-q.factorCampana)*100)+'%':''}`;
+ if(q.materiales.length)detalle+='\n'+q.materiales.map(r=>`${cat.objeto(r.id)?.nombre??r.id} ×${r.cantidad}`).join(' · ');
+ if(q.copias)detalle+=`\nCopias adicionales: ${o.uids.length}/${q.copias}`;
+ if(!q.permitida)detalle+='\n'+q.motivo;
+ const p=await crearPantallaOperacion({titulo:TITULOS_EQUIPO[modo]+(o.fase==='materiales'?' · Materiales':''),saldo:cuenta.user.col,filas,pagina:o.pagina,
+  seleccion:modo==='sell'||o.fase==='materiales'?o.uids:o.fase==='destinos'?[o.destino]:[o.uid],detalle,controles,confirmable:q.permitida,mensaje:o.mensaje});
+ if(q.permitida)acciones.revisar_operacion=async()=>{
+  const confirmTicket=++estado.aperturaPrincipal;
+  const anterior={capas:estado.capas,acciones:estado.acciones},consulta=(await estado.api.request('equipment/quote',{mode:modo,...params})).data;
+  if(!consulta.permitida)return operacionEquipo(modo,{...o,mensaje:consulta.motivo});
+  const consumidos=consulta.consumir.length?`Se consumirán ${consulta.consumir.length} piezas.\n`:'';
+  const stats=consulta.stats?Object.keys(consulta.stats.antes).filter(k=>consulta.stats.antes[k]!==consulta.stats.despues[k]).slice(0,3)
+   .map(k=>`${k.toUpperCase()} ${consulta.stats.antes[k]}→${consulta.stats.despues[k]}`).join(' · '):'';
+  const premios=consulta.recibir.map(r=>`${cat.objeto(r.id)?.nombre??r.id} ×${r.cantidad}`).join(' · ');
+  const resumen=`${detalle}\n${stats?stats+'\n':''}${premios?'Recibirás '+premios+'\n':''}${consumidos}Al confirmar se guardarán los cambios.`,popup=await crearConfirmacionOperacion(TITULOS_EQUIPO[modo],resumen);
+  if(confirmTicket!==estado.aperturaPrincipal)return;
+  let ocupada=false;
+  const cancelar=()=>{if(!ocupada)escena('operacion-equipo',anterior.capas,anterior.acciones,{teclado:true});};
+  escena('confirmar-equipo',[...anterior.capas,{velo:'rgba(0,0,0,.82)'},{pantalla:popup}],{cancelar_operacion:cancelar,button_footer_return:cancelar,confirmar_operacion:async()=>{
+   if(ocupada)return;ocupada=true;popup.buscar('confirmar_operacion').alpha=135;
+   try{await estado.api.request('equipment/'+modo,{...params,quote:consulta.quote});await cargarCuenta();
+    await operacionEquipo(modo,{...o,uids:[],uid:modo==='sell'?null:o.uid,nivel:modo==='strengthen'?Math.min((o.nivel??0)+1,ficha.nivelMax):o.nivel,mensaje:'Cambios guardados en tu partida'});
+   }catch(e){await operacionEquipo(modo,{...o,mensaje:e.message});}
+  }},{teclado:true});
+ };
+ const bg=await fondo(FONDO_MENU);if(ticket!==estado.aperturaPrincipal)return;
+ escena('operacion-equipo',[bg,{pantalla:p}],acciones,{teclado:true});
+}
+
+async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resultados:null}){
+ const ticket=++estado.aperturaPrincipal;await cargarCuenta();if(ticket!==estado.aperturaPrincipal)return;
+ const cat=master(),cuenta=estado.cuenta,q=consultarReclutamiento(cat,cuenta,{banner_id:id,count:o.count}),b=q.banner;
+ if(!b)return avisoPrincipal('Reclutamiento',q.motivo);
+ const probabilidades=probabilidadesBanner(b,cat).sort((a,z)=>z.rareza-a.rareza||a.id-z.id);
+ const visibles=o.resultados??(o.todos?probabilidades:probabilidades.filter(r=>r.rareza===4));
+ const filas=visibles.map((r,i)=>({id:o.resultados?i:r.id,imagen:MINIATURA(o.resultados?r.character_id:r.id),texto:o.resultados?nombrePersonaje(r.character_id):r.nombre,
+  detalle:o.resultados?r.duplicate?'Repetido · +'+r.hacking_crystals+' cristales':'Nuevo · ★'+cat.personaje(r.character_id).rareza:
+   `★${r.rareza} · ${r.porcentaje.toFixed(3)}%`}));
+ const abrir=cambios=>reclutamiento(id,{...o,...cambios,mensaje:''});
+ const acciones={button_footer_return:()=>menuPrincipal('taberna','chara'),pagina_anterior:()=>abrir({pagina:Math.max(0,o.pagina-1)}),pagina_siguiente:()=>abrir({pagina:Math.min(Math.ceil(filas.length/6)-1,o.pagina+1)})};
+ if(!o.resultados)for(const r of visibles)acciones['pieza_'+r.id]=()=>avisoPrincipal(nombrePersonaje(r.id),
+  `Probabilidad individual: ${r.porcentaje.toFixed(6)}%.\nRareza: ${r.rareza}.\nEl personaje se elige por sorteo dentro de este banner.\nPool: Fanadata. Tasas: reconstrucción S-argo.`);
+ const detalle=o.resultados?`Resultados guardados · ${b.nombre}\nLos repetidos se convierten en cristales.\nPuedes consultar tu colección desde la Taberna.`:
+  `Pool: Fanadata · tasas/coste: S-argo\nHistórico ${b.inicio} — ${b.fin}\n★4: 4% · ★3: 25% · ★2: 71%\n${o.count} ${o.count===1?'sorteo':'sorteos'}: ${b.precios[o.count]} diamantes${q.permitida?'':'\n'+q.motivo}`;
+ const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
+ acciones.sorteo_uno=()=>abrir({count:1});acciones.sorteo_once=()=>abrir({count:11});acciones.ver_tasas=()=>abrir({todos:!o.todos,pagina:0});acciones.volver_banner=()=>abrir({resultados:null,pagina:0});
+ const p=await crearPantallaOperacion({titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
+  detalle,controles,confirmable:q.permitida&&!o.resultados,confirmarTexto:'Reclutar ×'+o.count,mensaje:o.mensaje});
+ if(q.permitida&&!o.resultados)acciones.revisar_operacion=async()=>{
+  const confirmTicket=++estado.aperturaPrincipal;
+  const anterior={capas:estado.capas,acciones:estado.acciones};
+  const consulta=(await estado.api.request('lottery/quote',{banner_id:id,count:o.count})).data;
+  if(!consulta.permitida)return abrir({mensaje:consulta.motivo});
+  const popup=await crearConfirmacionOperacion('Reclutar ×'+o.count,
+   `${b.nombre}\nReconstrucción comunitaria\n${o.count} sorteos · ${consulta.coste} diamantes\n★4 4% · ★3 25% · ★2 71%\nRepetidos ★2/3/4: 1/2/50 cristales.\nPool: Fanadata · reglas: S-argo.`);
+  if(confirmTicket!==estado.aperturaPrincipal)return;let ocupada=false;
+  const cancelar=()=>{if(!ocupada)escena('reclutamiento',anterior.capas,anterior.acciones,{teclado:true});};
+  escena('confirmar-reclutamiento',[...anterior.capas,{velo:'rgba(0,0,0,.82)'},{pantalla:popup}],{cancelar_operacion:cancelar,button_footer_return:cancelar,confirmar_operacion:async()=>{
+   if(ocupada)return;ocupada=true;popup.buscar('confirmar_operacion').alpha=135;
+   try{const r=(await estado.api.request('lottery/draw',{banner_id:id,count:o.count,quote:consulta.quote})).data;
+    await reclutamiento(id,{...o,pagina:0,resultados:r.results,mensaje:'Sorteo guardado en tu partida'});
+   }catch(e){await reclutamiento(id,{...o,mensaje:e.message});}
+  }},{teclado:true});
+ };
+ const bg=await fondo(FONDO_MENU);if(ticket!==estado.aperturaPrincipal)return;
+ escena('reclutamiento',[bg,{pantalla:p}],acciones,{teclado:true});
 }
 
 async function mundo() {

@@ -12,10 +12,6 @@ export const PENDIENTES_MENU=Object.freeze({
  training:['Entrenamiento','El entrenamiento de personajes todavía está pendiente. Puedes usar el árbol y las ranuras desde Equipo o Upgrade.'],
  diamonds:['Diamantes','La compra de diamantes no está disponible. Tu saldo guardado se conserva.'],
  weaponshop:['Tienda de armas','Las ofertas y compras de esta tienda todavía están pendientes. Puedes gestionar las piezas que ya tienes desde Equipo.'],
- button_progress:['Fortalecer equipo','El fortalecimiento con materiales y Col todavía está pendiente. Abrir este menú no consume recursos ni cambia el nivel de tus piezas.'],
- button_forge:['Evolucionar equipo','La evolución, sus requisitos y consumo de materiales todavía están pendientes. Puedes consultar y asignar las piezas de tu inventario.'],
- button_sell:['Vender equipo','La venta y sus precios todavía están pendientes. Tus piezas se conservan.'],
- button_exchange:['Intercambiar','El intercambio de piezas y materiales todavía está pendiente. No se consume tu inventario.'],
  button_party_search:['Buscar grupo','Buscar jugadores y grupos necesita un servidor de multijugador. Puedes preparar tu equipo local y jugar misiones en solitario.'],
  button_friend_search:['Buscar amigos','La lista de amigos y sus invitaciones necesitan un servidor. No hay jugadores remotos conectados a esta partida local.'],
  button_numbersearch:['Buscar sala','No hay salas online ni números de sala disponibles sin servidor.'],
@@ -44,7 +40,7 @@ export function componerTown(p,plantilla){
  return p;
 }
 
-export function componerTaberna(p,plantilla,cuenta,categoria='all'){
+export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[]){
  if(!['all','chara','weapon'].includes(categoria))categoria='all';
  const botones=['all','chara','weapon'].map(k=>clonar(p.buscar('button_category_'+k)));
  // Variantes, banners y cantidades del editor no constituyen ofertas ni saldos del jugador.
@@ -65,15 +61,22 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all'){
   textoMenu('inventario_taberna',conteo,375,675,{alto:60,tam:30}),
   acceso(plantilla,'consultar_taberna',categoria==='chara'?'Tus personajes':'Gestionar equipo',375,550),
   textoMenu('nota_taberna','Consultar tu colección no consume diamantes\nni entrega personajes o equipo nuevos.',375,395,{alto:100}));
+ if(banners.length&&categoria!=='weapon'){
+  p.texto('ofertas_taberna','Banners históricos · grupos de Fanadata');p.buscar('ofertas_taberna').y=930;p.buscar('ofertas_taberna').alto=60;
+  p.buscar('inventario_taberna').y=365;p.buscar('consultar_taberna').y=270;p.buscar('nota_taberna').y=170;
+  p.texto('nota_taberna','Probabilidades y condiciones visibles en cada banner.\nReconstrucción comunitaria · partida local.');
+  banners.slice(0,3).forEach((b,i)=>{const n=acceso(plantilla,'banner_'+b.id,b.nombre,375,815-i*145);n.ancho=650;
+   const t=plantilla.buscar('text_title',n);Object.assign(t,{x:325,ancho:620});p.raiz.hijos.push(n);});
+ }
  return p;
 }
 
 export function componerUpgrade(p,plantilla,cuenta){
  for(const n of ['image_dummy_character','panel_character_face','blooming','image_sale_bg'])p.mostrar(n,false);
  const t=p.buscar('text_commont');Object.assign(t,textoMenu('text_commont',
-  `Upgrade · Herrería\n${cuenta?.equipment?.length??0} piezas en tu inventario\nFortalecer, evolucionar y vender siguen pendientes.`,375,970,{ancho:660,alto:170,tam:30}));
+  `Upgrade · Herrería\n${cuenta?.equipment?.length??0} piezas en tu inventario\nSelecciona una operación para revisar sus requisitos.`,375,970,{ancho:660,alto:170,tam:30}));
  for(const n of ['button_progress','button_forge','button_sell','button_exchange']){
-  const b=p.buscar(n);b.alpha=170;b.escalaX=b.escalaY=.83;
+  const b=p.buscar(n);b.alpha=255;b.escalaX=b.escalaY=.83;
  }
  p.raiz.hijos.push(acceso(plantilla,'upgrade_arbol','Árbol',183,720),acceso(plantilla,'upgrade_ranuras','Ranuras',566,720),
   textoMenu('nota_upgrade','Árbol y ranuras usan tus materiales,\nrequisitos y mejoras guardadas.',375,575,{alto:100}));
@@ -90,12 +93,12 @@ export function componerMulti(p,plantilla){
  return p;
 }
 
-export async function crearMenuPrincipal(nombre,{cuenta,categoria='all'}={}){
+export async function crearMenuPrincipal(nombre,{cuenta,categoria='all',banners=[]}={}){
  const rutas={town:'ui/common/common_menu_other_s.csb',taberna:'ui/lottery/character_lottery_s.csb',
   upgrade:'ui/blacksmith/blacksmith_s.csb',multi:'ui/quest_board/quest_board_top_s.csb'};
  if(!rutas[nombre])throw Error('Menú desconocido');
  const [p,w]=await Promise.all([Pantalla.cargar(rutas[nombre]),Pantalla.cargar('ui/common/common_menu_widget.csb')]);
- ({town:()=>componerTown(p,w),taberna:()=>componerTaberna(p,w,cuenta,categoria),
+ ({town:()=>componerTown(p,w),taberna:()=>componerTaberna(p,w,cuenta,categoria,banners),
   upgrade:()=>componerUpgrade(p,w,cuenta),multi:()=>componerMulti(p,w)})[nombre]();
  await p.precargar();return p;
 }

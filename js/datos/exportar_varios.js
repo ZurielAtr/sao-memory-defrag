@@ -5,6 +5,8 @@ import { get, o, verdad, esEntero, igual, ordenar, aJSON, aJSONIndentado } from 
 import { normalHits, porId, porNivel } from './comun.js';
 import { Decoder } from './master_data.js';
 import { catalogoEquipo } from './exportar_equipo.js';
+import { catalogoOperaciones } from './exportar_operaciones.js';
+import { catalogoReclutamiento } from './exportar_reclutamiento.js';
 import { catalogoHabilidades } from './exportar_habilidades.js';
 import {exportarEfectosHistoria} from './exportar_efectos_historia.js';
 import {metadataHistorias} from './metadata_historia.js';
@@ -194,6 +196,8 @@ export async function exportarApi(fuente, salida) {
     _nota: 'Generado por web/js/datos/exportar_varios.js (exportarApi); campos PROVISIONALES en NOTAS.md (F3).',
     personajes: characters, expNivel: expLevel, nivelMaximo: maxLevel, objetos: items, equipos: equipment,
     habilidades: await catalogoHabilidades(fuente),
+    operaciones:await catalogoOperaciones(fuente),
+    reclutamiento:await catalogoReclutamiento(fuente,characters),
     misiones, drops, recompensas: rewards,
   };
   await salida.escribir('api_master.json', aJSON(data));

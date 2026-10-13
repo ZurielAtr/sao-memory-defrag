@@ -21,7 +21,7 @@ Your APK is processed on your computer and **is not uploaded to a server**. Impo
 
 A computer with a keyboard is recommended. Touch controls are not available yet, and Safari/iPhone/iPad support has not been validated.
 
-On the **Equipo** (Team) screen, click **Equipo** (Equipment) next to a character and choose **Arma** (Weapon), **Armadura** (Armor), or **Accesorio** (Accessory). You can equip or remove compatible items from your inventory. Your choices are saved, and their stats and passive effects apply in combat. If the list is empty, you first need to obtain equipment from quests. Equipment upgrades and evolution are still pending.
+On the **Equipo** (Team) screen, click **Equipo** (Equipment) next to a character and choose **Arma** (Weapon), **Armadura** (Armor), or **Accesorio** (Accessory). You can equip or remove compatible items from your inventory. Your choices are saved, and their stats and passive effects apply in combat. If the list is empty, you first need to obtain equipment from quests. In **Upgrade**, select equipment, review requirements and confirm strengthening, evolution, selling or exchange. Changes are saved; canceling consumes nothing.
 
 In **Equipo**, click **Árbol** (Tree) to unlock nodes using the required materials and prerequisites. You can drag the tree in both directions. Character passives require purchasing their node; leveling up alone does not activate them. **Ranuras** (Slots) lets you purchase and upgrade skills available to that character. If alternative materials are offered, choose one before purchasing. Purchased upgrades are saved and apply in combat.
 
@@ -60,7 +60,11 @@ Blacksmith, and **Multi** the co-op menu. Tab/arrow keys cycle their buttons;
 Enter/Space selects and Escape goes back. The Tavern lets you browse your own
 collection and manage equipment. Upgrade links to inventory, Team, Tree and Slots.
 
-Scouting and strengthening/evolving/selling/exchanging equipment are still pending.
+The Tavern offers reconstructed historical Start Dash, Alfheim Online Reborn and Wind banners with per-character probabilities and×1/×11 draws. Featured pools come from [Fanadata](https://saomd.fanadata.com/banners); rates, costs and duplicates use the community [S-argo](https://github.com/Expugn/S-argo) model, identified on screen. These are not official server responses. Duplicates preserve upgraded characters and grant crystals; spending this general crystal balance is still pending.
+
+All remaining banners still need to be added; expanding this catalog is deferred to a later stage.
+
+Upgrade supports strengthening, evolution, selling and exchange with requirements and saved transactions.
 Multi lets you prepare your local team and open solo quests; searching rooms,
 friends or parties requires a server that has not been implemented yet. Town
 currently provides local shortcuts; the animated town is still pending.

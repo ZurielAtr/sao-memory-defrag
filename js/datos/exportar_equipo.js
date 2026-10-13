@@ -17,5 +17,6 @@ export async function catalogoEquipo(fuente) {
     stats: Object.fromEntries(Object.entries(campos).map(([n, f]) => [n, parStatEquipo(get(r, f, 0))])),
     pasivas: o(get(r, 'f20'), []).filter((id) => Number.isSafeInteger(id) && id > 0),
     correccionSalida: get(r, 'f26', 0),
+    evolucion:get(r,'f8',0),rarezaMax:get(r,'f9',0),precioVenta:get(r,'f10',0),grupoFortalecer:get(r,'f21',0),intercambiable:get(r,'f23',0)!==0,
   }]));
 }

@@ -22,7 +22,7 @@ Se recomienda ordenador con teclado. Los controles táctiles están pendientes y
 En la pantalla **Equipo**, pulsa **Equipo** junto al personaje y elige **Arma**, **Armadura** o
 **Accesorio**. Puedes equipar o retirar piezas compatibles de tu inventario. La elección se guarda
 en la partida y sus estadísticas y pasivas se aplican en combate. Si la lista está vacía, primero
-necesitas obtener equipo en las misiones. Las mejoras y evoluciones siguen pendientes.
+necesitas obtener equipo en las misiones. Desde **Upgrade** puedes fortalecer, evolucionar, vender e intercambiar: selecciona las piezas, revisa los requisitos y confirma. Las operaciones se guardan; cancelar no consume recursos.
 
 En **Equipo**, pulsa **Árbol** para desbloquear nodos con sus materiales y requisitos.
 Puedes arrastrar el árbol en ambos ejes. Las pasivas propias requieren comprar su nodo;
@@ -71,8 +71,11 @@ la Herrería y **Multi** el menú de cooperación. Tab/las flechas recorren sus 
 Intro/Espacio seleccionan y Escape vuelve. En Taberna puedes consultar tu colección
 y gestionar el equipo. Upgrade enlaza inventario, Equipo, Árbol y Ranuras.
 
-Los sorteos y las operaciones de fortalecer/evolucionar/vender/intercambiar todavía
-están pendientes. Multi permite preparar el equipo local y entrar a misiones en
+Taberna ofrece Start Dash, Alfheim Online Reborn y Viento como banners históricos reconstruidos. Puedes consultar probabilidades individuales y reclutar×1/×11. Grupos: [Fanadata](https://saomd.fanadata.com/banners); tasas, costes y repetidos: modelo comunitario [S-argo](https://github.com/Expugn/S-argo), identificado en pantalla. No son respuestas del servidor oficial. Los repetidos conservan al personaje y conceden cristales; su gasto genérico aún está pendiente.
+
+Falta incorporar todos los demás banners; esa ampliación queda para una etapa posterior.
+
+Upgrade permite fortalecer/evolucionar/vender/intercambiar con requisitos y guardado. Multi permite preparar el equipo local y entrar a misiones en
 solitario; buscar salas, amigos o grupos requiere un servidor que aún no está
 implementado. Town ofrece accesos locales; la ciudad animada sigue pendiente.
 

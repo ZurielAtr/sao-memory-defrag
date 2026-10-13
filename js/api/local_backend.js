@@ -14,6 +14,8 @@
 import { MemoryStore } from './store.js';
 import { equipoCompatible, RANURAS_EQUIPO } from '../equipo.js';
 import { consultarRanura, consultarNodo } from '../habilidades.js';
+import { consultarOperacion, selloOperacion, normalizarOperacion, MODOS_EQUIPO } from '../operaciones_equipo.js';
+import {consultarReclutamiento,selloReclutamiento,sortearPersonaje} from '../reclutamiento.js';
 
 export const SCHEMA_VERSION = 5;
 
@@ -260,7 +262,7 @@ export class LocalBackend {
 
 function vistaUsuario(estado) {
   const { id, name, exp, col, diamond, created_at } = estado.user;
-  return { id, name, exp, col, diamond, created_at };
+  return { id, name, exp, col, diamond, created_at,hacking_crystals:estado.user.hacking_crystals??0 };
 }
 
 function vistaInventario(estado) {
@@ -268,6 +270,7 @@ function vistaInventario(estado) {
     characters: copy(estado.characters),
     equipment: copy(estado.equipment),
     items: Object.entries(estado.items).map(([id, count]) => ({ item_id: Number(id), count })),
+    equipment_exchanged_ids: [...(estado.equipment_exchanged_ids??[])],
   };
 }
 
@@ -308,6 +311,41 @@ function asignarEquipo(backend, estado, { character_uid, slot, equipment_uid }) 
 }
 
 const RUTAS = {
+  'lottery/quote':{cuenta:true,fn(estado,params){
+    const q=consultarReclutamiento(this.master,estado,params);
+    return {respuesta:{data:{...q,quote:q.permitida?selloReclutamiento(estado,q):null}}};
+  }},
+  'lottery/draw':{cuenta:true,fn(estado,{banner_id,count,quote}){
+    if(typeof quote!=='string'||!quote)fail('confirmacion_requerida','Consulta el banner y confirma el coste antes de reclutar');
+    const recibo=estado.operation_receipts?.find(r=>r.quote===quote);
+    if(recibo){
+      if(recibo.mode!=='recruit'||recibo.params.banner_id!==banner_id||recibo.params.count!==count)fail('confirmacion_invalida','La selección cambió');
+      return {respuesta:copy(recibo.respuesta)};
+    }
+    const q=consultarReclutamiento(this.master,estado,{banner_id,count});
+    if(!q.permitida)fail(q.code,q.motivo);
+    if(quote!==selloReclutamiento(estado,q))fail('inventario_cambiado','El banner o tu colección cambió; revisa de nuevo el sorteo');
+    const sorteados=Array.from({length:count},()=>sortearPersonaje(q.banner,this.random));
+    estado.user.diamond-=q.coste;
+    const resultados=sorteados.map(id=>{
+      const duplicado=estado.characters.some(c=>c.character_id===id),rareza=this.master.personaje(id).rareza;
+      if(duplicado){const cristales=q.banner.duplicados?.[rareza];if(!Number.isSafeInteger(cristales)||cristales<0)fail('datos_incompletos','Falta la compensación del personaje repetido');
+        estado.user.hacking_crystals=(estado.user.hacking_crystals??0)+cristales;
+        return {character_id:id,duplicate:true,hacking_crystals:cristales};}
+      return {character_id:id,duplicate:false,character:copy(this.nuevoPersonaje(estado,id))};
+    });
+    const respuesta={data:{banner_id,count,cost:q.coste,results:resultados,user:vistaUsuario(estado)}};
+    (estado.operation_receipts??=[]).push({quote,mode:'recruit',params:{banner_id,count},respuesta:copy(respuesta)});
+    estado.operation_receipts=estado.operation_receipts.slice(-32);
+    return {respuesta,nuevo:estado};
+  }},
+  'equipment/quote': {
+    cuenta: true,
+    fn(estado, {mode,...params}) {
+      const q=consultarOperacion(this.master,estado,mode,params,this.now());
+      return {respuesta:{data:{...q,quote:q.permitida?selloOperacion(estado,q):null}}};
+    },
+  },
   'character/ability-board': {
     cuenta: true,
     fn(estado, { character_uid, local_node_id, direction, choose_master_item_id }) {
@@ -511,5 +549,38 @@ const RUTAS = {
     },
   },
 };
+
+// D85: registro aditivo compatible con schema5. Últimos32 resultados para reintentos.
+for(const mode of MODOS_EQUIPO) RUTAS['equipment/'+mode]={cuenta:true,fn(estado,{quote,...params}){
+  if(typeof quote!=='string'||!quote)fail('confirmacion_requerida','Consulta y confirma los requisitos antes de continuar');
+  const normal=normalizarOperacion(mode,params),recibo=estado.operation_receipts?.find(r=>r.quote===quote);
+  if(recibo){
+    if(recibo.mode!==mode||JSON.stringify(recibo.params)!==JSON.stringify(normal))fail('confirmacion_invalida','La selección no coincide con la confirmación');
+    return {respuesta:copy(recibo.respuesta)};
+  }
+  const q=consultarOperacion(this.master,estado,mode,normal,this.now());
+  if(!q.permitida)fail(q.code,q.motivo);
+  if(quote!==selloOperacion(estado,q))fail('inventario_cambiado','El inventario o los requisitos cambiaron; revisa de nuevo la operación');
+  estado.user.col-=q.col;
+  for(const r of q.materiales)estado.items[r.id]-=r.cantidad;
+  const consumidos=new Set(q.consumir);
+  estado.equipment=estado.equipment.filter(e=>!consumidos.has(e.uid));
+  let equipo=null;
+  if(mode==='strengthen'||mode==='evolve'){
+    equipo=estado.equipment.find(e=>e.uid===normal.equipment_uid);
+    equipo.equipment_id=q.destino;equipo.level=q.nivel;
+  }
+  if(mode==='exchange'){
+    equipo={uid:estado.siguienteUid++,equipment_id:q.destino,level:1,created_at:this.now()};
+    estado.equipment.push(equipo);
+    (estado.equipment_exchanged_ids??=[]).push(q.destino);
+  }
+  for(const r of q.recibir)estado.items[r.id]=(estado.items[r.id]??0)+r.cantidad;
+  const respuesta={data:{mode,equipment:equipo?copy(equipo):null,consumed_uids:q.consumir,
+    col:q.col,materials:copy(q.materiales),received:copy(q.recibir),user:vistaUsuario(estado),items:vistaInventario(estado).items}};
+  (estado.operation_receipts??=[]).push({quote,mode,params:normal,respuesta:copy(respuesta)});
+  estado.operation_receipts=estado.operation_receipts.slice(-32);
+  return {respuesta,nuevo:estado};
+}};
 
 export const RUTAS_LOCALES = Object.keys(RUTAS);
