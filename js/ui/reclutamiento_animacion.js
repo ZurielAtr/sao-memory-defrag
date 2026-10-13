@@ -233,14 +233,35 @@ async function texturaRetrato(renderer,id){
  }
  return retratos.get(id);
 }
+// D91: contenido histórico de images/lottery/still/1–3 (descarga diferida, ausente de las APK).
+// Las mismas imágenes vienen en la APK como stills de historia; still_01_aincrad sólo a 750×422.
+// Equivalentes visuales (otra compresión JPEG), no los bytes descargados por el juego.
+const C=n=>`images/quest/chapter/still/${1000+Number(n.slice(6,8))}/${n}.jpg`;
+export const STILLS_GACHA_APK=Object.freeze({
+ 1:['images/story/still/still_01_aincrad.jpg',...['still_01_red_robe','still_02_kobold_mode_change','still_03_pub_cheers','still_07_xrphan_dive',
+  'still_09_gleam_eyes_breath','still_12_scavenge_toad','still_13_kirito_block','still_15_link_start'].map(C)],
+ 2:['still_02_agil_introduction','still_03_message_sachi','still_04_flower_garden','still_04_kirito_ikemen','still_05_asuna_sleep','still_07_sword_break',
+  'still_08_kuradeel_armblast','still_09_asuna_jitome','still_09_wwfm','still_10_heathcliff_holy_sword','still_11_yui_wakeup','still_17_suguha_shy',
+  'still_18_oberon_smile2'].map(C),
+ 3:['still_03_sachi_bed_in','still_04_puneuma','still_04_sirika_skirt','still_07_lisbeth_hand','still_07_lisbeth_hug','still_09_asuna_dash',
+  'still_09_kirito_dualsword','still_10_asuna_propose','still_12_yui_smile','still_13_klein_agil','still_15_kirito_smile','still_16_yui_pixie',
+  'still_17_leafa_remember','still_19_leafa_ok'].map(C),
+});
+/** Rutas de la carpeta histórica si se añadió el paquete; si no, sus equivalentes de la APK. */
+export async function rutasStillsGacha(variante,listar){
+ const folder=`images/lottery/still/${variante}`;
+ let archivos=[];try{archivos=(await listar(folder)).filter(f=>/\.jpe?g$/i.test(f));}catch{}
+ return archivos.length?archivos.map(f=>`${folder}/${f}`):[...(STILLS_GACHA_APK[variante]??[])];
+}
+const listarCarpeta=async folder=>{
+ const respuesta=await fetch(rutaWeb(`/api/ls?path=${encodeURIComponent(folder)}`));
+ return respuesta.ok?(await respuesta.json()).files??[]:[];
+};
 async function stillsOriginales(variante,renderer,random){
  try{
-  const folder=`images/lottery/still/${variante}`;
-  const respuesta=await fetch(rutaWeb(`/api/ls?path=${encodeURIComponent(folder)}`));
-  if(!respuesta.ok)return [];
-  const archivos=elegirStillsGacha((await respuesta.json()).files??[],random);
-  return Promise.all(archivos.map(async archivo=>{
-   const img=await imagen(`${folder}/${archivo}`);if(!img)return null;
+  const rutas=elegirStillsGacha(await rutasStillsGacha(variante,listarCarpeta),random);
+  return Promise.all(rutas.map(async ruta=>{
+   const img=await imagen(ruta);if(!img)return null;
    // El frame original mide256×144: mostrar la imagen completa, también si el
    // asset histórico viene con resolución mayor que la plantilla embebida.
    const c=document.createElement('canvas');c.width=256;c.height=144;c.getContext('2d').drawImage(img,0,0,256,144);
