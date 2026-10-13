@@ -67,6 +67,7 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[]){
   p.texto('nota_taberna','Probabilidades y condiciones visibles en cada banner.\nReconstrucción comunitaria · partida local.');
   banners.slice(0,3).forEach((b,i)=>{const n=acceso(plantilla,'banner_'+b.id,b.nombre,375,815-i*145);n.ancho=650;
    const t=plantilla.buscar('text_title',n);Object.assign(t,{x:325,ancho:620});p.raiz.hijos.push(n);});
+  p.buscar('consultar_taberna').x=183;p.raiz.hijos.push(acceso(plantilla,'ultimo_sorteo','Último sorteo',566,270));
  }
  return p;
 }

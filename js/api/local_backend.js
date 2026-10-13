@@ -16,6 +16,7 @@ import { equipoCompatible, RANURAS_EQUIPO } from '../equipo.js';
 import { consultarRanura, consultarNodo } from '../habilidades.js';
 import { consultarOperacion, selloOperacion, normalizarOperacion, MODOS_EQUIPO } from '../operaciones_equipo.js';
 import {consultarReclutamiento,selloReclutamiento,sortearPersonaje} from '../reclutamiento.js';
+import {REGALO_INICIAL} from './configuracion.js';
 
 export const SCHEMA_VERSION = 5;
 
@@ -86,7 +87,7 @@ export class LocalBackend {
    * @param {number[]} [o.iniciales]  personajes de una cuenta nueva (PROVISIONAL: el del juego web)
    */
   constructor({ master, store = new MemoryStore(), cuenta = 'cuenta', now = () => Date.now(),
-    random = Math.random, iniciales = [34001] } = {}) {
+    random = Math.random, iniciales = [34001], diamantesIniciales=REGALO_INICIAL.diamantes } = {}) {
     if (!master) throw new TypeError('LocalBackend necesita master');
     this.master = master;
     this.store = store;
@@ -94,6 +95,8 @@ export class LocalBackend {
     this.now = now;
     this.random = random;
     this.iniciales = iniciales;
+    if(!Number.isSafeInteger(diamantesIniciales)||diamantesIniciales<0)throw new TypeError('Saldo inicial de diamantes inválido');
+    this.diamantesIniciales=diamantesIniciales;
     this.cola = Promise.resolve(); // las peticiones se atienden de una en una, como un servidor
   }
 
@@ -311,6 +314,10 @@ function asignarEquipo(backend, estado, { character_uid, slot, equipment_uid }) 
 }
 
 const RUTAS = {
+  'lottery/last-result':{cuenta:true,fn(estado){
+    const ultimo=estado.last_lottery_result??estado.operation_receipts?.findLast(r=>r.mode==='recruit')?.respuesta?.data??null;
+    return {respuesta:{data:copy(ultimo)}};
+  }},
   'lottery/quote':{cuenta:true,fn(estado,params){
     const q=consultarReclutamiento(this.master,estado,params);
     return {respuesta:{data:{...q,quote:q.permitida?selloReclutamiento(estado,q):null}}};
@@ -335,6 +342,7 @@ const RUTAS = {
       return {character_id:id,duplicate:false,character:copy(this.nuevoPersonaje(estado,id))};
     });
     const respuesta={data:{banner_id,count,cost:q.coste,results:resultados,user:vistaUsuario(estado)}};
+    estado.last_lottery_result=copy(respuesta.data);
     (estado.operation_receipts??=[]).push({quote,mode:'recruit',params:{banner_id,count},respuesta:copy(respuesta)});
     estado.operation_receipts=estado.operation_receipts.slice(-32);
     return {respuesta,nuevo:estado};
@@ -348,14 +356,15 @@ const RUTAS = {
   },
   'character/ability-board': {
     cuenta: true,
-    fn(estado, { character_uid, local_node_id, direction, choose_master_item_id }) {
+    fn(estado, { character_uid, local_node_id, direction, choose_master_item_id, use_hacking_crystals=false }) {
       const c = personajePropio(estado, character_uid);
       if (!Number.isSafeInteger(local_node_id) || local_node_id <= 0) fail('nodo_invalido', 'Nodo inválido');
       const pj = this.master.personaje(c.character_id);
       const compra = consultarNodo(pj, c, this.master.habilidades(), estado, local_node_id,
-        { direccion: direction, material: choose_master_item_id });
+        { direccion: direction, material: choose_master_item_id,cristales:use_hacking_crystals });
       if (!compra.disponible) fail(compra.code, compra.motivo);
       consumirMateriales(estado, compra.costes);
+      if(compra.cristales)estado.user.hacking_crystals-=compra.cristales;
       c.ability_board.push(local_node_id);
       c.unlocked_ability_release_level = compra.liberacion;
       const n = compra.nodo;
@@ -375,7 +384,7 @@ const RUTAS = {
         c.active_skill = c.active_skill.filter(r=>r.master_active_skill_id!==id);
         c.active_skill.push({ master_active_skill_id: id, level: nivel });
       }
-      return { respuesta: { data: { character: copy(c), items: vistaInventario(estado).items } }, nuevo: estado };
+      return { respuesta: { data: { character: copy(c), items: vistaInventario(estado).items,user:vistaUsuario(estado) } }, nuevo: estado };
     },
   },
   'character/slot-skill': {
@@ -414,7 +423,8 @@ const RUTAS = {
       const ahora = this.now();
       const nuevo = {
         schema: SCHEMA_VERSION,
-        user: { id: Math.floor(this.random() * 9e8) + 1e8, name: name.trim(), exp: 0, col: 0, diamond: 0, created_at: ahora, updated_at: ahora },
+        user: { id: Math.floor(this.random() * 9e8) + 1e8, name: name.trim(), exp: 0, col: 0, diamond: this.diamantesIniciales,
+          initial_diamond_grant:{amount:this.diamantesIniciales,version:REGALO_INICIAL.version},created_at: ahora, updated_at: ahora },
         characters: [],
         equipment: [],
         items: {},

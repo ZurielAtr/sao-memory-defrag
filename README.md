@@ -60,7 +60,9 @@ Blacksmith, and **Multi** the co-op menu. Tab/arrow keys cycle their buttons;
 Enter/Space selects and Escape goes back. The Tavern lets you browse your own
 collection and manage equipment. Upgrade links to inventory, Team, Tree and Slots.
 
-The Tavern offers reconstructed historical Start Dash, Alfheim Online Reborn and Wind banners with per-character probabilities and×1/×11 draws. Featured pools come from [Fanadata](https://saomd.fanadata.com/banners); rates, costs and duplicates use the community [S-argo](https://github.com/Expugn/S-argo) model, identified on screen. These are not official server responses. Duplicates preserve upgraded characters and grant crystals; spending this general crystal balance is still pending.
+The Tavern offers reconstructed historical Start Dash, Alfheim Online Reborn and Wind banners with per-character probabilities and×1/×11 draws. Featured pools come from [Fanadata](https://saomd.fanadata.com/banners); rates, costs and duplicates use the community [S-argo](https://github.com/Expugn/S-argo) model, identified on screen. These are not official server responses. Duplicates preserve upgraded characters and grant general crystals, available as an alternative payment source on eligible Tree limit-break nodes. Choose one source; this balance is not combined with inventory materials.
+
+New accounts receive **600 recruitment diamonds**, a provisional amount that may change for future players. Existing saves keep their balance. Draws are saved before each result animation; **Mostrar/Siguiente** reveals or advances and **Ver lista/Escape** ends the sequence. **Último sorteo → Ver animación** replays it without paying again. Reduced motion is respected; some effects, the introduction and original recruitment audio remain pending.
 
 All remaining banners still need to be added; expanding this catalog is deferred to a later stage.
 

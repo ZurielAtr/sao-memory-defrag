@@ -26,7 +26,7 @@ export function componerOperacion(p,w,{titulo,saldo,saldoTexto=null,filas=[],pag
  p.raiz.hijos.push(botonOperacion(w,'pagina_anterior','Anterior',183,530,{activo:pagina>0}),
   botonOperacion(w,'pagina_siguiente',`Siguiente · ${pagina+1}/${paginas}`,566,530,{activo:pagina+1<paginas}),
   textoMenu('detalle_operacion',envolverTexto(detalle,undefined,46).join('\n'),375,408,{alto:150,tam:24}),
-  ...controles.map((c,i)=>botonOperacion(w,c.id,c.texto,controles.length===1?375:125+250*i,280,{ancho:controles.length===1?500:228,activo:c.activo!==false})),
+  ...controles.map((c,i)=>botonOperacion(w,c.id,c.texto,controles.length===1?375:controles.length===2?183+383*i:125+250*i,280,{ancho:controles.length===1?500:controles.length===2?334:228,activo:c.activo!==false})),
   botonOperacion(w,'revisar_operacion',confirmarTexto,375,180,{ancho:500,activo:confirmable}),
   botonOperacion(w,'button_footer_return','Volver',375,70,{ancho:334}));
  if(mensaje)p.raiz.hijos.push(textoMenu('mensaje_operacion',cortar(mensaje,70),375,600,{alto:38,tam:21}));

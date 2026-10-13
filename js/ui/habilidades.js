@@ -103,17 +103,30 @@ export async function crearPantallaHabilidades(o) {
   const limite = modo === 'arbol' && consulta?.nodo?.tipo === 9;
   const costes = consulta?.siguiente?.costes ?? (limite ? consulta?.opciones : consulta?.costes) ?? [];
   let y = 353;
+  const filasLimite=[];
+  if(limite&&consulta.opcionCristales){
+    const r=consulta.opcionCristales,seleccionado=elegido?.cristales===true;
+    const fila=panel('elegir_cristales_generales',0,0,680,86,[texto('cristales_generales',
+      `${seleccionado?'Elegido · ':'Elegir · '}Cristales generales ${r.saldo}/${r.cantidad}\nFuente local alternativa de ruptura`,12,43,22,655,seleccionado?cyan:gris)]);
+    fila.tactil=true;filasLimite.push(fila);acciones[fila.nombre]=()=>abrir(modo,objetivo,{...elegido,material:null,cristales:true});
+  }
   for (const coste of costes) {
-    const alt = coste.alternativa === 1, seleccionadoAlt = alt && coste.id === (limite ? consulta.material ?? elegido?.material : elegido);
+    const alt = coste.alternativa === 1, seleccionadoAlt = alt && !elegido?.cristales && coste.id === (limite ? consulta.material ?? elegido?.material : elegido);
     const color = (items[coste.id] ?? 0) >= coste.cantidad ? gris : { r: 255, g: 180, b: 150 };
     const linea = texto(`material_${coste.id}`, `${alt ? seleccionadoAlt ? 'Elegido · ' : 'Elegir · ' : ''}${master.objeto(coste.id)?.nombre ?? `Objeto ${coste.id}`} ${items[coste.id] ?? 0}/${coste.cantidad}`, 18, y, 22, 660, seleccionadoAlt ? cyan : color);
     linea.alto = 28;
     if (alt) {
       const fila = panel(`elegir_material_${coste.id}`, 12, y - 19, 680, 38, [linea]);
-      Object.assign(linea, { x: 6, y: 19 }); fila.tactil = true; info.hijos.push(fila);
-      acciones[fila.nombre] = () => abrir(modo, objetivo, limite ? { ...elegido, material: coste.id } : coste.id);
+      Object.assign(linea, { x: 6, y: 19 }); fila.tactil = true;
+      if(limite){fila.x=0;fila.alto=86;linea.y=43;filasLimite.push(fila);}else info.hijos.push(fila);
+      acciones[fila.nombre] = () => abrir(modo, objetivo, limite ? { ...elegido, material: coste.id,cristales:false } : coste.id);
     } else info.hijos.push(linea);
     y -= 32;
+  }
+  if(limite&&filasLimite.length){
+    const alto=filasLimite.length*92;filasLimite.forEach((f,i)=>f.y=alto-(i+1)*92);
+    const pagos=panel('fuentes_ruptura',12,261,680,135,filasLimite);pagos.clase='ScrollView';pagos.interior={ancho:680,alto:Math.max(135,alto),direccion:1};
+    info.hijos.push(pagos);
   }
   if (limite && !consulta.adquirido) {
     for (const [i, d] of DIRECCIONES_LIMITE.entries()) {

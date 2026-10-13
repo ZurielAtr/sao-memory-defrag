@@ -149,6 +149,8 @@ export function consultarNodo(personaje, instancia, catalogo, cuenta, local, sel
   const nodos = nodosDelPersonaje(personaje, catalogo), nodo = nodos.find(n=>n.local===local);
   if (!nodo) return bloqueo('nodo_inexistente', 'Este nodo no pertenece al árbol del personaje');
   const extra = { nodo };
+  if(seleccion.cristales!==undefined&&typeof seleccion.cristales!=='boolean')return bloqueo('fuente_invalida','Selecciona una fuente de pago válida',extra);
+  if(seleccion.cristales===true&&nodo.tipo!==9)return bloqueo('fuente_invalida','Los cristales generales sólo se usan en rupturas de límite',extra);
   if (nodo.tipo === 0 || lista(instancia?.ability_board).includes(local)) {
     return bloqueo('nodo_adquirido', 'Nodo desbloqueado', { ...extra, adquirido: true });
   }
@@ -162,13 +164,24 @@ export function consultarNodo(personaje, instancia, catalogo, cuenta, local, sel
     if (!Array.isArray(filas) || !filas.length) return bloqueo('coste_inexistente', 'No hay materiales para esta ruptura', extra);
     const tasa = catalogo?.tasasLimite?.[personaje.rareza] ?? 1;
     const opciones = [...new Map(filas.map(r=>[r.id, { ...r, cantidad: costeLimite(r.cantidad, tasa) }])).values()];
+    // Equivalencia local explícita: saldo general alternativo sólo para la opción importada2003.
+    const generica=opciones.find(r=>r.id===2003),extraCristales=generica?{opcionCristales:{cantidad:generica.cantidad,saldo:cuenta?.user?.hacking_crystals??0}}:{};
     if (!DIRECCIONES_LIMITE.some(d=>d.id===seleccion?.direccion)) {
-      return bloqueo('direccion_requerida', 'Elige la estadística de crecimiento de esta rama', { ...extra, opciones, direcciones: DIRECCIONES_LIMITE });
+      return bloqueo('direccion_requerida', 'Elige la estadística de crecimiento de esta rama', { ...extra, opciones,...extraCristales,direcciones: DIRECCIONES_LIMITE });
+    }
+    if(seleccion.cristales===true){
+      if(seleccion.material!=null)return bloqueo('fuente_invalida','Elige cristales generales o un material, sin combinarlos',{...extra,opciones,...extraCristales});
+      if(!generica||!entero(generica.cantidad))return bloqueo('fuente_invalida','Esta ruptura no ofrece pago con cristales generales',extra);
+      const saldo=cuenta?.user?.hacking_crystals??0;
+      const detalle={...extra,opciones,...extraCristales,direccion:seleccion.direccion,material:null,cristales:generica.cantidad,
+        liberacion:instancia.unlocked_ability_release_level??1,direcciones:DIRECCIONES_LIMITE,costes:[]};
+      return !entero(saldo)||saldo<generica.cantidad?bloqueo('cristales_insuficientes','No tienes suficientes cristales generales',detalle):
+        {...detalle,disponible:true,motivo:''};
     }
     const material = seleccion?.material ?? (opciones.length === 1 ? opciones[0].id : null);
     const eleccion = costesRanura({ costes: opciones }, material);
-    if (!eleccion.disponible) return { ...extra, ...eleccion, direcciones: DIRECCIONES_LIMITE };
-    return { ...extra, opciones, direccion: seleccion.direccion, material, liberacion: instancia.unlocked_ability_release_level ?? 1,
+    if (!eleccion.disponible) return { ...extra, ...eleccion,...extraCristales,direcciones: DIRECCIONES_LIMITE };
+    return { ...extra, opciones,...extraCristales,direccion: seleccion.direccion, material, liberacion: instancia.unlocked_ability_release_level ?? 1,
       direcciones: DIRECCIONES_LIMITE, ...comprobarMateriales(cuenta, eleccion.costes) };
   }
   if (nodo.tipo === 10) {

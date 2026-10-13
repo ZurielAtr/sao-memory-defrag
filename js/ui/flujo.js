@@ -34,6 +34,7 @@ import {DESTINOS_FOOTER,DESTINOS_TOWN,PENDIENTES_MENU,crearMenuPrincipal,crearAv
 import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.js';
 import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
+import {cargarAnimacionReclutamiento,controlesResultado} from './reclutamiento_animacion.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -150,7 +151,7 @@ function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null
   Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas,teclado,foco:null });
   canvas.tabIndex=0;canvas.setAttribute('aria-label',`SAO MD · ${nombre}`);
   audio.escena(nombre);
-  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : ['home','town','taberna','multi'].includes(nombre) ? 'home' : ['upgrade','equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
+  if (!nombre.startsWith('resultado')) void audio.contexto(nombre === 'titulo' ? 'titulo' : ['home','town','taberna','multi','reclutamiento','animacion-reclutamiento','confirmar-reclutamiento'].includes(nombre) ? 'home' : ['upgrade','equipo', 'armas', 'personajes', 'preparacion'].includes(nombre) ? 'equipo' : 'misiones');
   document.title = `SAO MD · ${nombre}`;
 }
 
@@ -174,6 +175,8 @@ function dibujar(t) {
         const iw = c.img.width * (DISENO.alto / c.img.height);
         ctx.setTransform(b[0], 0, 0, -b[3], b[4], b[5] + b[3] * DISENO.alto);
         ctx.drawImage(c.img, (DISENO.ancho - iw) / 2, 0, iw, DISENO.alto);
+      } else if (c.animacion) {
+        c.animacion.dibujar(ctx);
       } else if (c.velo) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = c.velo;
@@ -345,6 +348,11 @@ async function menuPrincipal(nombre,categoria='all'){
     for(const k of ['all','chara','weapon'])acciones['button_category_'+k]=()=>menuPrincipal('taberna',k);
     acciones.consultar_taberna=categoria==='chara'?()=>listaPersonajes(null,0,{volver:()=>menuPrincipal(nombre,categoria),seleccionar:false}):abrirEquipo;
     if(categoria!=='weapon')for(const b of master().reclutamiento().banners)acciones['banner_'+b.id]=()=>reclutamiento(b.id);
+    if(categoria!=='weapon')acciones.ultimo_sorteo=async()=>{
+      const r=(await estado.api.request('lottery/last-result')).data;
+      if(!r)return avisoPrincipal('Último sorteo','Todavía no hay un resultado guardado en tu partida.');
+      return reclutamiento(r.banner_id,{pagina:0,count:r.count,todos:false,mensaje:'Resultado guardado · consultar no consume diamantes',resultados:r.results});
+    };
   }
   if(nombre==='upgrade'){
     for(const [k,modo]of Object.entries({button_forge:'strengthen',button_progress:'evolve',button_sell:'sell',button_exchange:'exchange'}))acciones[k]=()=>operacionEquipo(modo);
@@ -440,8 +448,9 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
   `Probabilidad individual: ${r.porcentaje.toFixed(6)}%.\nRareza: ${r.rareza}.\nEl personaje se elige por sorteo dentro de este banner.\nPool: Fanadata. Tasas: reconstrucción S-argo.`);
  const detalle=o.resultados?`Resultados guardados · ${b.nombre}\nLos repetidos se convierten en cristales.\nPuedes consultar tu colección desde la Taberna.`:
   `Pool: Fanadata · tasas/coste: S-argo\nHistórico ${b.inicio} — ${b.fin}\n★4: 4% · ★3: 25% · ★2: 71%\n${o.count} ${o.count===1?'sorteo':'sorteos'}: ${b.precios[o.count]} diamantes${q.permitida?'':'\n'+q.motivo}`;
- const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
+ const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'},{id:'animar_sorteo',texto:'Ver animación'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
  acciones.sorteo_uno=()=>abrir({count:1});acciones.sorteo_once=()=>abrir({count:11});acciones.ver_tasas=()=>abrir({todos:!o.todos,pagina:0});acciones.volver_banner=()=>abrir({resultados:null,pagina:0});
+ if(o.resultados)acciones.animar_sorteo=()=>reproducirResultados(id,o,o.resultados);
  const p=await crearPantallaOperacion({titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
   detalle,controles,confirmable:q.permitida&&!o.resultados,confirmarTexto:'Reclutar ×'+o.count,mensaje:o.mensaje});
  if(q.permitida&&!o.resultados)acciones.revisar_operacion=async()=>{
@@ -456,12 +465,37 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
   escena('confirmar-reclutamiento',[...anterior.capas,{velo:'rgba(0,0,0,.82)'},{pantalla:popup}],{cancelar_operacion:cancelar,button_footer_return:cancelar,confirmar_operacion:async()=>{
    if(ocupada)return;ocupada=true;popup.buscar('confirmar_operacion').alpha=135;
    try{const r=(await estado.api.request('lottery/draw',{banner_id:id,count:o.count,quote:consulta.quote})).data;
-    await reclutamiento(id,{...o,pagina:0,resultados:r.results,mensaje:'Sorteo guardado en tu partida'});
+    await reproducirResultados(id,o,r.results);
    }catch(e){await reclutamiento(id,{...o,mensaje:e.message});}
   }},{teclado:true});
  };
  const bg=await fondo(FONDO_MENU);if(ticket!==estado.aperturaPrincipal)return;
  escena('reclutamiento',[bg,{pantalla:p}],acciones,{teclado:true});
+}
+
+async function reproducirResultados(id,o,resultados,indice=0){
+ const ticket=++estado.aperturaPrincipal;await cargarCuenta();if(ticket!==estado.aperturaPrincipal)return;
+ const lista=mensaje=>reclutamiento(id,{...o,pagina:0,resultados,mensaje});
+ const resultado=resultados[indice];if(!resultado)return lista('Resultados guardados en tu partida');
+ try{
+  const preferencia=window.matchMedia?.('(prefers-reduced-motion: reduce)'),reducida=preferencia?.matches??false;
+  const [animacion,p]=await Promise.all([cargarAnimacionReclutamiento(resultado,master(),{reducida}),controlesResultado(indice,resultados.length)]);
+  if(ticket!==estado.aperturaPrincipal)return;let cambiando=false,inicio=null,tiempo=0;
+  const actualizar=t=>{
+   if(inicio!==null&&document.visibilityState!=='hidden')tiempo+=Math.max(0,Math.min(t-inicio,.1));inicio=t;animacion.actualizar(tiempo);if(preferencia?.matches)animacion.revelar();
+   p.texto('nombre_resultado',animacion.revelada?nombrePersonaje(resultado.character_id):'');
+   p.texto('estado_resultado',animacion.revelada?`★${master().personaje(resultado.character_id).rareza} · ${resultado.duplicate?'Repetido · +'+resultado.hacking_crystals+' cristales':'Nuevo personaje'}`:'');
+   p.texto('siguiente_resultado_texto',animacion.revelada?indice+1<resultados.length?'Siguiente':'Terminar':'Mostrar resultado');
+  };
+  const terminar=()=>{if(cambiando)return;cambiando=true;return lista('Resultado guardado en tu partida');};
+  escena('animacion-reclutamiento',[{velo:'#000'},{animacion},{pantalla:p}],{
+   button_footer_return:terminar,lista_resultados:terminar,siguiente_resultado:()=>{
+    if(cambiando)return;if(!animacion.revelada){animacion.revelar();actualizar(inicio??0);return;}
+    cambiando=true;return indice+1<resultados.length?reproducirResultados(id,o,resultados,indice+1):lista('Resultado guardado en tu partida');
+   },
+  },{teclado:true,cada:actualizar});
+  estado.foco='siguiente_resultado';
+ }catch(e){if(ticket===estado.aperturaPrincipal)return lista('Animación no disponible; tu sorteo ya está guardado');}
 }
 
 async function mundo() {
@@ -811,6 +845,7 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
   const c = miembroEn(k); if (!c) return equipo(m);
   const catalogo = master(), pj = catalogo.personaje(c.character_id);
   const [bg, vuelta] = await Promise.all([fondo(FONDO_MENU), pie()]);
+  Object.assign(vuelta.buscar('button_footer_return'),{x:200,y:55,escalaX:.65,escalaY:.65});
   let comprando = false;
   const { pantalla, acciones } = await crearPantallaHabilidades({ personaje: pj, instancia: c,
     catalogo: catalogo.habilidades(), cuenta: estado.cuenta, master: catalogo, modo, seleccionado, elegido, mensaje,
@@ -821,14 +856,14 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
       pantalla.texto('motivo_habilidad', 'Guardando mejora…');
       try {
         const params = modo === 'arbol' ? { character_uid: c.uid, local_node_id: n,
-          direction: consulta.direccion, choose_master_item_id: consulta.material }
+          direction: consulta.direccion, choose_master_item_id: consulta.material,use_hacking_crystals:e?.cristales===true }
           : { character_uid: c.uid, slot: n, expected_level: consulta.nivel, choose_master_item_id: e };
         await estado.api.request(modo === 'arbol' ? 'character/ability-board' : 'character/slot-skill', params);
         await habilidades(m, k, modo, n, null, 'Mejora guardada');
       } catch (err) { await habilidades(m, k, modo, n, e, err.message); }
     },
   });
-  escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones);
+  escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones,{teclado:true});
 }
 
 // D77: lista y botones originales; asignaciones/acciones son del backend local.

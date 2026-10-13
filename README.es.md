@@ -71,7 +71,9 @@ la Herrería y **Multi** el menú de cooperación. Tab/las flechas recorren sus 
 Intro/Espacio seleccionan y Escape vuelve. En Taberna puedes consultar tu colección
 y gestionar el equipo. Upgrade enlaza inventario, Equipo, Árbol y Ranuras.
 
-Taberna ofrece Start Dash, Alfheim Online Reborn y Viento como banners históricos reconstruidos. Puedes consultar probabilidades individuales y reclutar×1/×11. Grupos: [Fanadata](https://saomd.fanadata.com/banners); tasas, costes y repetidos: modelo comunitario [S-argo](https://github.com/Expugn/S-argo), identificado en pantalla. No son respuestas del servidor oficial. Los repetidos conservan al personaje y conceden cristales; su gasto genérico aún está pendiente.
+Taberna ofrece Start Dash, Alfheim Online Reborn y Viento como banners históricos reconstruidos. Puedes consultar probabilidades individuales y reclutar×1/×11. Grupos: [Fanadata](https://saomd.fanadata.com/banners); tasas, costes y repetidos: modelo comunitario [S-argo](https://github.com/Expugn/S-argo), identificado en pantalla. No son respuestas del servidor oficial. Los repetidos conservan al personaje y conceden cristales generales, utilizables como una alternativa de pago en las rupturas del Árbol que la ofrecen. Elige una sola fuente; no se mezclan con los materiales del inventario.
+
+Las cuentas nuevas reciben **600 diamantes para reclutar**, una cantidad provisional que puede cambiar para futuros jugadores. Las partidas existentes conservan su saldo. El sorteo se guarda antes de mostrar la animación de cada resultado; **Mostrar/Siguiente** avanza y **Ver lista/Escape** termina la secuencia. **Último sorteo → Ver animación** permite repetirla sin volver a pagar. Se respeta el movimiento reducido; algunos efectos, la introducción y el audio original de reclutamiento siguen pendientes.
 
 Falta incorporar todos los demás banners; esa ampliación queda para una etapa posterior.
 
