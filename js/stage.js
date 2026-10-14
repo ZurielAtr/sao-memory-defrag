@@ -4,6 +4,7 @@ import { rutaWeb } from './rutas.js';
 
 import { imageQuad } from './renderer.js';
 import { loadImage } from './character.js';
+import { CAMPO, CamaraCampo, spritesFondo, posicionParalaje, rectSprite } from './campo.js';
 
 // p = factor de parallax (1 = se mueve con el suelo), y = borde inferior en el mundo,
 // every/at = si la capa no se repite pegada sino cada `every` unidades empezando en `at`.
@@ -60,5 +61,56 @@ export class Stage {
       }
     }
     return quads;
+  }
+}
+
+/** D106: fondo de combate con las capas de background.json (data/fondos.json) y la cámara de FieldHorizontal.
+ *  Sustituye a Stage (capas acomodadas a ojo) cuando el escenario tiene fondo. */
+export class FondoBatalla {
+  static async load(renderer, fondo, camara = null, cache = new Map()) {
+    const rutas = new Set();
+    for (const c of fondo.capas ?? []) {
+      if (c.tipo === 2 && c.archivo && c.carpeta) rutas.add(`images/background/${c.carpeta}/${c.archivo}`);
+      if (c.negro) rutas.add(CAMPO.negro);
+    }
+    const texturas = new Map();
+    await Promise.all([...rutas].map(async (ruta) => {
+      if (!cache.has(ruta)) cache.set(ruta, loadImage(rutaWeb(`/assets/${ruta}`)).then((img) => renderer.createTexture(img)).catch(() => null));
+      const t = await cache.get(ruta);
+      if (t) texturas.set(ruta, t);
+    }));
+    const tamanos = Object.fromEntries([...texturas].map(([r, t]) => [r, { w: t.w, h: t.h }]));
+    const camaraCampo = new CamaraCampo(fondo, camara);
+    return new FondoBatalla(fondo, camaraCampo, spritesFondo(fondo, tamanos, camaraCampo.g), texturas);
+  }
+
+  constructor(fondo, camara, sprites, texturas) {
+    this.fondo = fondo;
+    this.camara = camara;
+    this.sprites = sprites;
+    this.texturas = texturas;
+    this.def = { sky: [0, 0, 0, 1] }; // fuera del fondo: negro (color de borrado)
+  }
+
+  /** Quads en unidades del mundo: {atras, delante} del campo (las unidades van entre ambas, en el zOrder del campo).
+   *  `suelo` = y del mundo de la línea delantera del campo (z = 0). */
+  quads(suelo) {
+    const cam = this.camara.actual;
+    const atras = [], delante = [];
+    if (!cam) return { atras, delante };
+    const par = this.camara.paralaje(cam), [fx, fy] = this.camara.g.campo, P = CAMPO.pixelesPorUnidad;
+    let lista = atras;
+    for (const sp of this.sprites) {
+      if (sp.campo) { lista = delante; continue; }
+      const t = this.texturas.get(sp.ruta);
+      if (!t) continue;
+      const [lx, ly] = posicionParalaje(sp, par, cam.s);
+      const r = rectSprite(sp, t, lx, ly);
+      const q = imageQuad(t, (r.x - fx) / P, suelo + (r.y - fy) / P, r.w / P, r.h / P);
+      if (sp.volteo[0]) q.uvs = q.uvs.map(([u, v]) => [1 - u, v]);
+      if (sp.volteo[1]) q.uvs = q.uvs.map(([u, v]) => [u, 1 - v]);
+      lista.push(q);
+    }
+    return { atras, delante };
   }
 }

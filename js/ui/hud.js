@@ -183,7 +183,11 @@ export class HudBatalla {
       if (f.hidden || !(f.alive || f.state === 'dead')) continue;
       const [sx, sy] = this.o.mundoAPantalla(f.x, f.y + 330 * e.escala);
       enemigo.buscar('bar_hp').porcentaje = (100 * f.hp) / f.maxHp;
-      this.dibujarEn(ctx, enemigo, sx * dpr, sy * dpr, k, f.boss ? 1.3 : 0.9);
+      // D106: en el original el HP sobre las unidades cuelga del nodo del campo (HeadUnitHpBar en el nodo +0x244 de
+      // FieldHorizontal, FUN_007167a0) y se escala con la cámara. Con la cámara del original la barra va a su
+      // escala; la proporción del jefe (1.3/0.9) sigue PROVISIONAL. Sin ella, el tamaño fijo anterior.
+      const escalaBarra = e.escalaCampo ? e.escalaCampo * (f.boss ? 1.3 / 0.9 : 1) : f.boss ? 1.3 : 0.9;
+      this.dibujarEn(ctx, enemigo, sx * dpr, sy * dpr, k, escalaBarra);
       if (f.boss && f.alive && !this.jefesVistos.has(f)) { this.jefesVistos.add(f); this.avisoJefe = 2; }
     }
 

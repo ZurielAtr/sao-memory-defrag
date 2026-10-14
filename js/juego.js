@@ -16,7 +16,8 @@ import './importador/comprobar.js'; // D68: sin datos (página pública sin impo
 import { SSRenderer, imageQuad } from './renderer.js';
 import { decodeFrame, PART_TYPE } from './ssbp.js';
 import { Character, loadImage } from './character.js';
-import { Stage, STAGES } from './stage.js';
+import { Stage, STAGES, FondoBatalla } from './stage.js';
+import { CAMPO } from './campo.js';
 import { SkillCutin } from './cutin.js';
 import { loadCombatData, characterStats, enemyStats, computeDamage } from './combate.js';
 import { Progreso } from './progreso.js';
@@ -73,11 +74,12 @@ const DIFFICULTY = Number(params.get('dificultad') ?? 1);
 const PLAYER_START_X = 600;
 // Profundidad (D58). El juego coloca a cada enemigo en Vec3(f2, f3, -f4) (FUN_0082ce90): aquí z = f4
 // (más lejos = z mayor = más arriba y detrás). Caminar mueve en x y z ((dir.x, 0, −dir.y)·248, FUN_0084f384)
-// y los golpes miran la profundidad (defensa.js). El campo va de z = 0 a background.f3 (fondo.profundidad).
-// PROVISIONAL: el dibujo (cada unidad de z sube DEPTH_Y) y que el jugador empiece en la mitad de la
-// profundidad (no se leyó dónde lo coloca el juego). PLAYER_Z es solo la referencia del dibujo.
+// y los golpes miran la profundidad (defensa.js).
+// D106: proyección del original (FUN_00819570/00819784, como Town): cada unidad de z sube 0.7071 (cos 45°) y
+// el campo mide background.f2/1.82 × background.f3/0.7071/1.82 unidades (el nodo del campo mide f2 × f3 px).
+// PROVISIONAL: que el jugador empiece en la mitad de la profundidad (no se leyó dónde lo coloca el juego).
 const PLAYER_Z = 120;
-const DEPTH_Y = 0.35;
+const DEPTH_Y = CAMPO.coseno;
 const PROF_APROX = 50; // sin eventos de golpe: attack.f8 más común (PROVISIONAL)
 // D58: guardia firme (define 6001/6002, FUN_00847450) y aturdimiento de la rotura de guardia (3 s según
 // el manual del juego, how_to_play.json "Guard Breaks"; motion 0x1b = `stun`, sin leer cómo lo dispara).
@@ -86,7 +88,9 @@ const ATURDIMIENTO = 3;
 // PROVISIONAL: los enemigos no se acercan hasta que el jugador está a esta distancia o los golpea.
 const AGGRO_RANGE = 800;
 
-const VIEW_H = 750; // alto visible del mundo (las capas del fondo están hechas para ~750)
+// Cámara antigua (fondo 2006 acomodado a ojo): sólo sin fondo de background.json (modo de prueba sin misión).
+// VIEW_H también fija la escala del cut-in, que va en coordenadas de pantalla.
+const VIEW_H = 750;
 const CAM_Y = VIEW_H / 2;
 const GROUND = 70;
 // Escala de los personajes (D52): el juego mide y dibuja el arte a 1/1.82 unidades del mundo
@@ -888,8 +892,8 @@ function golpeAEnemigo(p, e, { mult, final, drag, guardia, golpe, factorGuardia,
 }
 
 // ---------- Enemigos ----------
-// Profundidad -> altura de dibujo (PROVISIONAL, ver PLAYER_Z / DEPTH_Y).
-const groundY = (z) => GROUND + (z - PLAYER_Z) * DEPTH_Y;
+// Profundidad -> altura de dibujo (D106: 0.7071 por unidad de z, como el original).
+const groundY = (z) => GROUND + z * DEPTH_Y; // D106: z = 0 es la línea delantera del campo
 
 // Instancia otro enemigo con el mismo .ssbp y texturas ya cargados (misma unidad y traje).
 function cloneCharacter(proto) {
@@ -1338,8 +1342,9 @@ class Battle {
   get enemies() { return this.current?.enemies ?? []; }
   get index() { return this.mission.escenarios.indexOf(this.scenario); }
   get stage() { return this.stages.get(stageIdFor(this.scenario)); }
-  get fieldWidth() { return this.scenario?.fondo?.ancho ?? null; }
-  get fieldDepth() { return this.scenario?.fondo?.profundidad ?? null; } // background.f3 (D58)
+  // D106: en unidades del juego (el campo mide background.f2 × f3 px; ver PLAYER_Z/DEPTH_Y).
+  get fieldWidth() { const a = this.scenario?.fondo?.ancho; return a ? a / CAMPO.pixelesPorUnidad : null; }
+  get fieldDepth() { const p = this.scenario?.fondo?.profundidad; return p ? p / CAMPO.coseno / CAMPO.pixelesPorUnidad : null; }
 
   placedFor(sc) {
     return sc.enemigos.filter((pl) => (pl.dificultad ?? 1) === DIFFICULTY && (pl.equipo ?? 2) === 2);
@@ -1525,8 +1530,14 @@ let battle = null;
 // Cuenta y progreso (F3 conectada, D45; web/js/progreso.js).
 let progreso = null;
 
+// D106: fondos de combate (data/fondos.json): capas y cámara del original por escenario.
+let FONDOS = null;
+const claveFondo = (sc) => (sc?.fondo?.id != null && FONDOS?.[sc.fondo.id] ? `fondo:${sc.fondo.id}|${JSON.stringify(sc.fondo.camara ?? null)}` : null);
+
 function stageIdFor(sc) {
   if (STAGE_ID) return STAGE_ID;
+  const clave = claveFondo(sc);
+  if (clave) return clave;
   const folder = sc?.fondo?.carpeta;
   // Solo el fondo 2006 tiene capas acomodadas (stage.js); el resto usa ese mientras tanto.
   return folder && STAGES[folder] ? String(folder) : DEFAULT_STAGE;
@@ -1562,7 +1573,9 @@ function bar(x, y, w, h, frac, color) {
 }
 
 function drawHud(p, foes, dt) {
-  if (hudCsb) return hudCsb.dibujar(ctx, { jugador: p, grupo, enemigos: foes, battle, combo, popups, dt, suelo: groundY, escala: CHAR_SCALE,
+  // D106: las barras de los enemigos están en el nodo del campo y se escalan con la cámara (escalaCampo).
+  const escalaCampo = battle?.stage instanceof FondoBatalla ? battle.stage.camara.actual?.s ?? null : null;
+  if (hudCsb) return hudCsb.dibujar(ctx, { jugador: p, grupo, enemigos: foes, battle, combo, popups, dt, suelo: groundY, escala: CHAR_SCALE, escalaCampo,
     puertas: battle && !battle.repeat ? battle.gates() : [] });
   const { width: W, height: H } = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, W, H);
@@ -1969,7 +1982,13 @@ async function main() {
     if (!m.unidad) throw new Error(`el enemigo ${m.nombre} no tiene unidad (.ssbp) en unit.json`);
     kinds.set(`${m.unidad}|${m.traje ?? ''}`, m);
   }
+  FONDOS = await fetch(rutaWeb('/data/fondos.json')).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const stageIds = [...new Set(mission.escenarios.map(stageIdFor))];
+  const scPorStage = new Map(mission.escenarios.map((sc) => [stageIdFor(sc), sc]));
+  const texturasFondo = new Map();
+  const cargarStage = (id) => (id.startsWith('fondo:')
+    ? FondoBatalla.load(renderer, FONDOS[scPorStage.get(id).fondo.id], scPorStage.get(id).fondo.camara, texturasFondo)
+    : Stage.load(renderer, id));
   // En una misión el nivel es el del personaje en la cuenta; ?pjnivel= o ?enemigoid= = modo de prueba (no se guarda).
   progreso = await Progreso.cargar({ activo: !TEST_MODE && !params.has('pjnivel'), personajeId: PLAYER_ID, grupo: GRUPO_IDS });
   // D49: lanzado desde la interfaz (?volver=interfaz.html): el resultado se muestra allí, no en el panel provisional.
@@ -1977,7 +1996,7 @@ async function main() {
   TABLA_ESTADOS = await fetch(rutaWeb('/data/estados.json')).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   pasivas = new Pasivas(await cargarPasivas(), { combo: () => combo.count }); // D60
   const [stages, shadowImg, miembros, protos, mira] = await Promise.all([
-    Promise.all(stageIds.map(async (id) => [id, await Stage.load(renderer, id)])).then((e) => new Map(e)),
+    Promise.all(stageIds.map(async (id) => [id, await cargarStage(id)])).then((e) => new Map(e)),
     loadImage(rutaWeb('/assets/images/battle/shadow.png')),
     Promise.all(GRUPO_IDS.map((id, i) => cargarMiembro(id, i, combat))),
     Promise.all([...kinds].map(async ([k, m]) => [k, await Character.load(renderer, m.unidad, { scale: CHAR_SCALE, costume: m.traje ?? undefined })]))
@@ -2108,18 +2127,32 @@ async function main() {
     combo.timer -= dt;
     if (combo.timer <= 0) combo.count = 0;
 
-    // Cámara: sigue al jugador con un poco de anticipación hacia donde mira.
-    if (battle.snapCamera) { camX = player.x + player.dir * 120; battle.snapCamera = false; }
-    camX += (player.x + player.dir * 120 - camX) * Math.min(1, dt * 4);
-    shake = Math.max(0, shake - dt);
-    const zoom = canvas.height / VIEW_H;
-    const jitter = shake > 0 ? (Math.random() - 0.5) * 12 : 0;
-    renderer.lookAt(camX + jitter, CAM_Y, zoom);
-    const halfW = canvas.width / zoom / 2;
     const stage = battle.stage;
-
-    renderer.begin(stage.def.sky);
-    renderer.drawQuads(stage.layerQuads(stage.back, camX, halfW));
+    shake = Math.max(0, shake - dt);
+    const zoom = canvas.height / VIEW_H; // escala del cut-in (coordenadas de pantalla)
+    const jitter = shake > 0 ? (Math.random() - 0.5) * 12 : 0;
+    let capas;
+    if (stage instanceof FondoBatalla) {
+      // D106: cámara de FieldHorizontal sobre el jugador en px del campo (×1.82; z ya va en player.y).
+      const P = CAMPO.pixelesPorUnidad;
+      const u = { x: player.x * P, y: (player.y - GROUND) * P, dir: player.dir, activo: player.alive !== false };
+      if (battle.snapCamera) { stage.camara.fijar(u); battle.snapCamera = false; }
+      const cam = stage.camara.actualizar(dt, u);
+      camX = cam.x / P;
+      renderer.lookAt(camX + jitter, GROUND + cam.y / P, cam.s * P * (canvas.height / CAMPO.pantalla[1]));
+      capas = stage.quads(GROUND);
+      renderer.begin(stage.def.sky);
+      renderer.drawQuads(capas.atras);
+    } else {
+      // Cámara antigua: sigue al jugador con un poco de anticipación hacia donde mira.
+      if (battle.snapCamera) { camX = player.x + player.dir * 120; battle.snapCamera = false; }
+      camX += (player.x + player.dir * 120 - camX) * Math.min(1, dt * 4);
+      renderer.lookAt(camX + jitter, CAM_Y, zoom);
+      const halfW = canvas.width / zoom / 2;
+      capas = { delante: stage.layerQuads(stage.front, camX, halfW) };
+      renderer.begin(stage.def.sky);
+      renderer.drawQuads(stage.layerQuads(stage.back, camX, halfW));
+    }
     // Más lejos (z mayor) se dibuja antes; a igual profundidad, el jugador encima.
     const bodies = [player, ...salen.filter((m) => m.saliendo), ...foes.filter((e) => !e.hidden && e.alpha > 0)]
       .sort((a, b) => (b.z - a.z) || (a === player ? 1 : b === player ? -1 : 0));
@@ -2134,7 +2167,7 @@ async function main() {
     for (const m of grupo) renderer.drawQuads(m.proyectiles.quads());
     for (const e of foes) renderer.drawQuads(e.proyectiles.quads());
     renderer.drawQuads(miraProyectiles.quads());
-    renderer.drawQuads(stage.layerQuads(stage.front, camX, halfW));
+    renderer.drawQuads(capas.delante);
     if (cutin?.active) {
       renderer.lookAt(0, 0, zoom); // el cut-in va en coordenadas de pantalla
       renderer.drawQuads(cutin.quads());

@@ -53,6 +53,32 @@ async function version(d, unidad) {
   return d.versiones.get(unidad);
 }
 
+/** D106: escala mínima (f18), máxima (f19) y por defecto (f22) del escenario; null sin ninguna. */
+function camaraEscenario(sc) {
+  const c = { min: get(sc, 'f18', 0), max: get(sc, 'f19', 0), base: get(sc, 'f22', 0) };
+  for (const k of Object.keys(c)) if (!(typeof c[k] === 'number' && c[k] > 0)) delete c[k];
+  return Object.keys(c).length ? c : null;
+}
+
+/** D106: fondo de combate (background.json) tal como lo monta FieldHorizontal (FUN_00818308/008185cc). */
+export function fondoCombate(bg) {
+  const capas = [];
+  for (const l of o(get(bg, 'f8'), [])) {
+    const tipo = get(l, 'f3', 0);
+    if (tipo !== 1 && tipo !== 2) continue; // FUN_00818308: 1 = campo, 2 = imagen (no hay tipo 3)
+    capas.push({
+      tipo, orden: get(l, 'f1', 0), archivo: get(l, 'f2', '') || null, carpeta: get(l, 'f16', null),
+      z: get(l, 'f4', 0), ancla: [get(l, 'f5', 0), get(l, 'f6', 0)], pos: [get(l, 'f7', 0), get(l, 'f8', 0)],
+      paralaje: [get(l, 'f9', 1), get(l, 'f10', 1)], modo: get(l, 'f11', 0), mosaico: get(l, 'f12', 0),
+      escala: [get(l, 'f13', 1), get(l, 'f14', 1)], negro: verdad(get(l, 'f15', 0)),
+    });
+  }
+  return {
+    ancho: get(bg, 'f2', 0), profundidad: get(bg, 'f3', 0), alto: get(bg, 'f4', 0),
+    escala: get(bg, 'f5', 1), escalaMin: get(bg, 'f6', 1), escalaMax: get(bg, 'f7', 1), capas,
+  };
+}
+
 /** Arma la misión qid (objeto) o null si no está en stage. */
 export async function exportarMision(d, qid) {
   const mission = d.stage.get(qid);
@@ -135,6 +161,8 @@ export async function exportarMision(d, qid) {
         carpeta: folders.size ? ordenar([...folders])[0] : null,
         ancho: get(bg, 'f2'),
         profundidad: get(bg, 'f3'),
+        // D106: zoom de la cámara del escenario; 0 o ausente = el del fondo (FUN_008171ac/0081720c/008173fc).
+        camara: camaraEscenario(sc),
       },
       enemigos: placed,
     });
@@ -202,6 +230,7 @@ export async function exportarMisiones(fuente, salida, stats, avance = null) {
   const ids = ordenar([...d.stage.keys()]);
   const indice = [];
   const resumen = { maestros: new Set(), usadas: new Set(), pares: new Map(), unidades: new Set() };
+  const fondos = new Set();
   let i = 0;
   for (const qid of ids) {
     const m = await exportarMision(d, qid);
@@ -214,6 +243,7 @@ export async function exportarMisiones(fuente, salida, stats, avance = null) {
       if (verdad(en.unidad)) resumen.unidades.add(en.unidad);
     }
     for (const sc of m.escenarios) {
+      if (sc.fondo?.id != null) fondos.add(sc.fondo.id);
       for (const e of sc.enemigos) {
         // Como exportar_ia.py: solo IA enteras (algunas colocaciones traen f5 mal decodificado como float).
         if (Number.isInteger(e.ia) && e.ia) {
@@ -226,5 +256,9 @@ export async function exportarMisiones(fuente, salida, stats, avance = null) {
   const orden = ordenar(indice, (e) => [e.mundo == null, o(e.mundo, 0), o(e.capituloNumero, 0), o(e.numero, 0), e.id]);
   orden.forEach((e, k) => { e.orden = k; });
   await salida.escribir('misiones/index.json', aJSON(orden));
+  // D106: fondos de combate usados por las misiones (capas, paralaje y zoom de la cámara).
+  const salidaFondos = {};
+  for (const id of ordenar([...fondos])) if (d.backgrounds.has(id)) salidaFondos[id] = fondoCombate(d.backgrounds.get(id));
+  await salida.escribir('fondos.json', aJSON(salidaFondos));
   return resumen;
 }
