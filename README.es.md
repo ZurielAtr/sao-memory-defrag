@@ -17,7 +17,7 @@ Port no oficial hecho por fans. Está en desarrollo y todavía tiene diferencias
 
 La APK se procesa en tu equipo y **no se envía al servidor**. Los recursos importados y tu partida quedan en el almacenamiento de ese navegador. No borres los datos del sitio si quieres conservarlos; puedes exportar una copia de tu partida desde la portada. Cambiar de navegador o de dispositivo requiere importar de nuevo.
 
-Se recomienda ordenador con teclado. Los controles táctiles están pendientes y no se ha validado el funcionamiento en Safari/iPhone/iPad.
+Se puede jugar con teclado o con controles táctiles. Los controles táctiles no se han probado todavía en un teléfono real, y el funcionamiento en Safari/iPhone/iPad no está validado.
 
 En escritorio, menús, diálogos y combate se muestran centrados con el formato vertical original, a la máxima altura disponible y con márgenes oscuros a los lados. Si el ancho es insuficiente, se ajustan sin recortarse. El regreso conserva su tamaño y orientación; se han corregido solapamientos en Taberna, Herrería, Multi, Mapa y Habilidades. La actualización del catálogo conserva los recursos importados y la partida. La fidelidad completa de algunas pantallas sigue pendiente.
 
@@ -49,6 +49,15 @@ se aplican con sus condiciones de combate.
 - La carga del rifle alterna ventanas de disparo normal, menor precisión y crítico. Una parada puede devolver los proyectiles que admiten reflexión.
 - C: guardia; C + Espacio: parada. X: paso atrás.
 - 1–4: skills. Q/E/R: cambiar al personaje 1/2/3.
+
+Con el dedo (como en el juego original):
+
+- Tocar: atacar.
+- Arrastrar en cualquier dirección: caminar; más lejos, correr.
+- Deslizar hacia arriba: saltar. Deslizar hacia abajo en el aire: Head Splitter.
+- Deslizar a un lado: paso rápido (hacia atrás si es contrario a donde mira el personaje).
+- Mantener pulsado sin mover: guardia (con rifle, arco o vara, cargar). Con la guardia puesta, arrastrar y soltar: parada.
+- Botones de la parte inferior: skills y cambio de personaje. MENU: pausa.
 
 ## Controles de diálogo
 

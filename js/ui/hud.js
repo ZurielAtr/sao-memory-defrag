@@ -324,12 +324,29 @@ export class HudBatalla {
   }
 
   // ---------- toques ----------
-  tocar(ev) {
+  // Punto del canvas del HUD bajo el evento, o null si cae fuera.
+  puntoEn(ev) {
     const c = document.getElementById('hud');
-    if (!c || !this.ultimo) return;
+    if (!c || !this.ultimo) return null;
     const r = c.getBoundingClientRect();
-    if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return;
-    const x = (ev.clientX - r.left) * c.width / r.width, y = (ev.clientY - r.top) * c.height / r.height;
+    if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return null;
+    return [(ev.clientX - r.left) * c.width / r.width, (ev.clientY - r.top) * c.height / r.height];
+  }
+
+  botonEn(x, y) {
+    return this.p.skills.nodoEn(x, y, (z) => /^(skill|character)_button_\d$/.test(z.nombre)) ?? this.p.menu.nodoEn(x, y, (z) => z.nombre === 'menu_button');
+  }
+
+  /** D99: el toque es del HUD (pausa o un botón) y no debe llegar al control táctil del combate. */
+  esDelHud(ev) {
+    const pt = this.puntoEn(ev);
+    return Boolean(pt && (this.pausado || this.botonEn(...pt)));
+  }
+
+  tocar(ev) {
+    const pt = this.puntoEn(ev);
+    if (!pt) return;
+    const [x, y] = pt;
     if (this.pausado) {
       const b = this.p.pausa.nodoEn(x, y, (n) => /^button_(cancel|retire_1|restart)$/.test(n.nombre));
       if (b?.nombre === 'button_cancel') this.reanudar();
@@ -337,7 +354,7 @@ export class HudBatalla {
       else if (b?.nombre === 'button_restart') location.reload();
       return;
     }
-    const n = this.p.skills.nodoEn(x, y, (z) => /^(skill|character)_button_\d$/.test(z.nombre)) ?? this.p.menu.nodoEn(x, y, (z) => z.nombre === 'menu_button');
+    const n = this.botonEn(x, y);
     if (!n) return;
     if (n.nombre === 'menu_button') this.pausar();
     else if (n.nombre.startsWith('character_')) this.o.accion(`cambio${n.nombre.slice(-1)}`); // Switch

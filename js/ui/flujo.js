@@ -17,7 +17,7 @@ import { rutaWeb } from '../rutas.js';
 // transiciones.
 
 import '../importador/comprobar.js'; // D68: sin datos (página pública sin importar) manda a la portada
-import { Pantalla, baseCanvas, clonar, apilar, DISENO, desplazarLista } from './pantalla.js';
+import { Pantalla, baseCanvas, clonar, apilar, DISENO, desplazarLista, velocidadInercia, avanzarInercia } from './pantalla.js';
 import { configurarPie, animarPie, iniciarPie } from './pie.js';
 import { actualizarAcciones } from './acciones.js';
 import { recorrer } from './csb.js';
@@ -191,7 +191,9 @@ function dibujar(t) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, w, h);
     const seg = t / 1000;
-    actualizarAcciones(estado.ultimoCuadro == null ? 0 : Math.min(.1, seg - estado.ultimoCuadro));
+    const dtCuadro = estado.ultimoCuadro == null ? 0 : Math.min(.1, seg - estado.ultimoCuadro);
+    actualizarAcciones(dtCuadro);
+    if (inercia && !avanzarInercia(inercia, dtCuadro)) inercia = null; // D99
     estado.ultimoCuadro = seg;
     estado.cada?.(seg);
     const b = baseCanvas(canvas);
@@ -231,6 +233,7 @@ function nodoBajo(x, y, filtro) {
 }
 
 let toque = null;
+let inercia = null; // D99: { lista, v } tras soltar un arrastre de lista
 const punto = (ev) => {
   const r = canvas.getBoundingClientRect();
   return [(ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height];
@@ -239,17 +242,19 @@ const punto = (ev) => {
 const punteros = new Map();
 let pellizco = null;
 const distancia = () => { const [a, b] = [...punteros.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+canvas.addEventListener('contextmenu', (ev) => ev.preventDefault()); // D99: la pulsación larga del móvil no abre menús
 canvas.addEventListener('pointerdown', (ev) => {
   estado.foco=null;canvas.focus({preventScroll:true});
+  inercia = null; // un dedo nuevo detiene la lista
   const [x, y] = punto(ev);
   punteros.set(ev.pointerId, [x, y]);
   if (punteros.size === 2) {
     const lista = nodoBajo(x, y, (z) => z.interior);
-    if (lista?._zoomArbol) { pellizco = { lista, d0: distancia(), z0: lista._zoomArbol.zoom }; if (toque) { toque.arrastre = true; if (toque.n) toque.n._pulsado = false; } return; }
+    if (lista?._zoomArbol) { pellizco = { lista, d0: distancia(), z0: lista._zoomArbol.zoom }; if (toque) { toque.arrastre = true; toque.pellizco = true; if (toque.n) toque.n._pulsado = false; } return; }
   }
   const n = nodoBajo(x, y, (z) => z.nombre in estado.acciones || z.nombre in estado.largas);
   const lista = nodoBajo(x, y, (z) => z.interior);
-  toque = { n, lista, x, y, d0: lista?._desplaz ?? 0, dx0: lista?._desplazX ?? 0, arrastre: false, t0: performance.now(), largo: false };
+  toque = { n, lista, x, y, ux: x, uy: y, d0: lista?._desplaz ?? 0, dx0: lista?._desplazX ?? 0, arrastre: false, t0: performance.now(), largo: false };
   if (n) n._pulsado = true;
   if (n && n.nombre in estado.largas) {
     const t = toque;
@@ -266,6 +271,7 @@ canvas.addEventListener('pointermove', (ev) => {
   if (pellizco) { if (punteros.size === 2) pellizco.lista._zoomArbol.aplicar(pellizco.z0 * distancia() / Math.max(1, pellizco.d0)); return; }
   if (!toque?.lista) return;
   const [x, y] = punto(ev);
+  toque.ux = x; toque.uy = y;
   const dy = y - toque.y;
   const dx = x - toque.x, dir = toque.lista.interior?.direccion;
   if (Math.abs(dir === 2 ? dx : dy) > 12 * devicePixelRatio || (dir === 3 && Math.abs(dx) > 12 * devicePixelRatio)) toque.arrastre = true;
@@ -283,6 +289,11 @@ canvas.addEventListener('pointerup', (ev) => {
   toque = null;
   if (!t) return;
   if (t.n) t.n._pulsado = false;
+  if (t.arrastre && t.lista && !t.pellizco) {
+    const k = baseCanvas(canvas)[0];
+    const v = velocidadInercia(t.lista, [-(t.ux - t.x) / k, (t.uy - t.y) / k], (performance.now() - t.t0) / 1000);
+    if (v) inercia = { lista: t.lista, v };
+  }
   if (t.arrastre || t.largo) return;
   if (t.n) {
     void audio.contexto(/cancel|return|cerrar|close/.test(t.n.nombre) ? 'cancelar' : /confirm|start|next/.test(t.n.nombre) ? 'confirmar' : 'seleccionar');

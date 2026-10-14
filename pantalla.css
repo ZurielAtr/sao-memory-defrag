@@ -13,5 +13,7 @@ html, body { margin: 0; width: 100%; height: 100%; background: #080a0e; overflow
   background: #000;
 }
 #viewport-juego canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+/* D99: en pantallas táctiles, sin selección, lupa ni menú de la pulsación larga sobre el juego. */
+#viewport-juego { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 #carga { position: absolute; inset: 0; display: grid; place-items: center; color: #9fd3ff;
   font: 14px "Segoe UI", system-ui, sans-serif; background: #050a14; }

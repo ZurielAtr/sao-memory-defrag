@@ -25,6 +25,8 @@ import { cargarPersonaje } from './personaje.js';
 import { IAEnemigo } from './ia.js';
 import { volverAInterfaz } from './ui/regreso.js';
 import { HudBatalla } from './ui/hud.js';
+import { ReconocedorTactil, ARMAS_CARGA, pasoDiagonal } from './tactil.js';
+import { VistaControl } from './ui/control_tactil.js';
 import { cargarCajas, anchoCuerpo, PIXELES_POR_UNIDAD } from './cajas.js';
 import { Proyectiles, resolverImpactoBala, responderParadaBala, resolverContactosProyectiles } from './proyectiles.js';
 import { actualizarDefensa, resolverGolpe, recuperarMedidor } from './defensa.js';
@@ -123,11 +125,11 @@ const KEYS = {
   left: ['ArrowLeft', 'KeyA'],
   right: ['ArrowRight', 'KeyD'],
   up: ['ArrowUp', 'KeyW'], // D58: el arrastre del juego mueve también en profundidad
-  down: ['ArrowDown', 'KeyS'],
-  jump: ['Space', 'KeyI'], // deslizar hacia arriba (how_to_play.json); con la guardia, parada
-  attack: ['KeyZ', 'KeyJ'],
+  down: ['ArrowDown', 'KeyS', 'Tactil:down'],
+  jump: ['Space', 'KeyI', 'Tactil:jump'], // deslizar hacia arriba (how_to_play.json); con la guardia, parada
+  attack: ['KeyZ', 'KeyJ', 'Tactil:attack'],
   dodge: ['KeyX', 'KeyK'],
-  guard: ['KeyC', 'KeyL'],
+  guard: ['KeyC', 'KeyL', 'Tactil:guard'],
   run: ['ShiftLeft', 'ShiftRight'],
   skill1: ['Digit1', 'Numpad1'],
   skill2: ['Digit2', 'Numpad2'],
@@ -149,6 +151,78 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => held.delete(e.code));
 addEventListener('blur', () => held.clear());
+
+// D99: control táctil (PlayerControllerLayer, tactil.js). Un dedo sobre el combate: tocar, arrastrar, deslizar
+// y mantener. Los toques del HUD (botones y pausa) no cuentan. Coordenadas en diseño (750 × 1334).
+const tactil = new ReconocedorTactil();
+let vistaControl = null;
+let ejesTactil = null; // { x, z, correr } del arrastre en curso
+let saltoTactil = null; // componente x (normalizada) del deslizamiento hacia arriba
+const enDiseno = (ev) => {
+  const r = canvas.getBoundingClientRect();
+  return [(ev.clientX - r.left) * 750 / r.width, (ev.clientY - r.top) * 750 / r.width];
+};
+addEventListener('pointerdown', (ev) => {
+  const r = canvas.getBoundingClientRect();
+  if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return;
+  if (hudCsb?.esDelHud(ev) || historiasPendientes || !battle) return;
+  if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+  tactil.empezar(ev.pointerId, ...enDiseno(ev), battle.player?.dir ?? 1);
+}, true);
+addEventListener('pointermove', (ev) => tactil.mover(ev.pointerId, ...enDiseno(ev)), true);
+addEventListener('pointerup', (ev) => tactil.terminar(ev.pointerId, ...enDiseno(ev)), true);
+addEventListener('pointercancel', (ev) => tactil.cancelar(ev.pointerId), true);
+addEventListener('contextmenu', (ev) => { if (ev.target === canvas || ev.target === hud) ev.preventDefault(); });
+
+// Paso del control táctil (motion 5 `step` hacia donde mira, 6 `back_step` al revés): dir · paso (+0x734).
+function pasoTactil(p, x, z, mira = p.dir) {
+  if (!['idle', 'walk', 'run'].includes(p.state)) return;
+  const adelante = Math.sign(x) === mira;
+  if (adelante) p.face(mira); // el arrastre del propio deslizamiento pudo girarlo
+  else p.face(-Math.sign(x));
+  const anim = adelante && p.has('step') ? 'step' : 'back_step';
+  if (!p.has(anim)) return;
+  const n = Math.hypot(x, z) || 1;
+  p.state = 'dodge';
+  p.vx = (x / n) * p.pasoVel;
+  p.vz = (z / n) * p.pasoVel;
+  p.play(anim, { restart: true });
+}
+
+// Traduce lo reconocido en este cuadro a las acciones del jugador (FUN_008f5990 / FUN_008f6b58).
+function aplicarTactil(p, dt) {
+  const { ejes, mantener, eventos } = tactil.cuadro(dt);
+  const carga = ARMAS_CARGA.has(p.arma);
+  const pulsar = (k) => pressed.add(`Tactil:${k}`);
+  // Mantener quieto 0.2 s: guardia, o carga con rifle/arco/vara (la carga empieza como un ataque mantenido).
+  const antes = held.has('Tactil:guard') || held.has('Tactil:attack');
+  held.delete('Tactil:guard');
+  held.delete('Tactil:attack');
+  if (mantener) {
+    held.add(carga ? 'Tactil:attack' : 'Tactil:guard');
+    if (carga && !antes) pulsar('attack');
+  }
+  ejesTactil = ejes;
+  for (const e of eventos) {
+    const n = Math.hypot(e.dx, e.dy) || 1;
+    if (e.tipo === 'toque') pulsar('attack');
+    else if (e.tipo === 'arriba') { pulsar('jump'); saltoTactil = e.dx / n; }
+    else if (e.tipo === 'abajo') {
+      if (p.alt > 0 || p.state === 'jump') pulsar('down'); // Head Splitter
+      else pasoTactil(p, ...pasoDiagonal(e.dx), e.mira);
+    } else if (e.tipo === 'lado') pasoTactil(p, e.dx / n, -e.dy / n, e.mira);
+    else if (e.tipo === 'soltarArrastre' && p.state === 'guard' && p.has('parry')) {
+      // Con la guardia puesta, arrastrar y soltar = parada (motion 30, FUN_008f6b58 caso 7).
+      p.state = 'parry';
+      p.play('parry', { restart: true });
+    }
+    if (['arriba', 'abajo', 'lado'].includes(e.tipo)) {
+      const d = tactil.ultimo;
+      if (d) vistaControl?.deslizar(d.x0, d.y0, d.x, d.y);
+    }
+  }
+  vistaControl?.actualizar(tactil.activo, dt);
+}
 
 // ---------- Utilidades ----------
 function resize() {
@@ -525,8 +599,9 @@ function playerInvulnerable(p) {
 }
 
 function updatePlayer(p, foes, dt) {
-  const move = (isHeld('right') ? 1 : 0) - (isHeld('left') ? 1 : 0);
-  const moveZ = (isHeld('up') ? 1 : 0) - (isHeld('down') ? 1 : 0); // D58: arriba = más lejos (z mayor)
+  let move = (isHeld('right') ? 1 : 0) - (isHeld('left') ? 1 : 0);
+  let moveZ = (isHeld('up') ? 1 : 0) - (isHeld('down') ? 1 : 0); // D58: arriba = más lejos (z mayor)
+  if (ejesTactil) { move = ejesTactil.x; moveZ = ejesTactil.z; } // D99: arrastre en cualquier dirección
   if (p.state !== 'guard') { p.tiempoGuardia = 0; p.guardiaFirme = false; }
   // D63: golpeado en el aire (reacción, derribo…): la gravedad sigue actuando.
   if (p.alt > 0 && !['jump', 'headSplitter', 'attack'].includes(p.state)) caerJugador(p, dt);
@@ -551,14 +626,15 @@ function updatePlayer(p, foes, dt) {
         // dirección pulsada se toma un deslizamiento a 45° (dir.x = ±0.71); sin ella, salto vertical.
         p.state = 'jump';
         p.vy = p.saltoVel;
-        p.vx = move * Math.SQRT1_2 * p.saltoVel;
+        p.vx = (saltoTactil ?? move * Math.SQRT1_2) * p.saltoVel; // D99: con el dedo, la x del deslizamiento
+        saltoTactil = null;
         p.airAttack = false;
         p.play('jump', { restart: true });
         break;
       }
       if (move || moveZ) {
-        if (move) p.face(move);
-        const running = isHeld('run');
+        if (move) p.face(Math.sign(move));
+        const running = isHeld('run') || Boolean(ejesTactil?.correr);
         const n = Math.hypot(move, moveZ); // dirección normalizada (el arrastre da a lo sumo 1)
         const v = (running ? DASH_SPEED : WALK_SPEED) * velocidadJugador(p);
         p.x += (move / n) * v * dt;
@@ -589,7 +665,7 @@ function updatePlayer(p, foes, dt) {
       if (ev) golpesDeEventos(p, foes, ev);
       else if (!p.hitDone && p.frame >= t.hit) { p.hitDone = true; tryHit(p, foes); }
       if (p.queued && p.combo < 3 && p.frame >= t.cancel && p.has(`attack_${p.combo + 1}`)) {
-        if (move) p.face(move);
+        if (move) p.face(Math.sign(move));
         startAttack(p, p.combo + 1);
       } else if (p.done) {
         p.state = p.alt > 0 ? 'jump' : 'idle'; // PROVISIONAL: al acabar en el aire, sigue la caída
@@ -1947,6 +2023,7 @@ async function main() {
     esperaCambio = Math.max(0, esperaCambio - dt);
     for (let i = 0; i < grupo.length; i++) if (wasPressed(`cambio${i + 1}`)) cambiar(i);
     const player = battle.player;
+    aplicarTactil(player, dt);
     const salen = grupo.filter((m) => m.saliendo);
     // D57: en la pausa de impacto la unidad no se mueve ni avanza su animación (impacto.js).
     if (!enPausa(player)) updatePlayer(player, foes, dt);
@@ -2064,10 +2141,17 @@ async function main() {
     }
 
     drawHud(player, foes, dt);
+    if (vistaControl) {
+      ctx.save();
+      vistaControl.dibujar(ctx, hud.width / 750);
+      ctx.restore();
+    }
   };
 
   // Para depurar desde la consola (step avanza la simulación aunque la pestaña esté oculta).
+  vistaControl = await VistaControl.cargar().catch((e) => { console.warn('Control táctil sin gráficos', e); return null; });
   window.__juego = {
+    tactil, get vistaControl() { return vistaControl; },
     get player() { return battle.player; }, grupo, cambiar, battle, step, get cutin() { return cutin; }, progreso, pasivas, combo,
     hud: hudCsb, get proyectiles() { return battle.player.proyectiles; }, get enemies() { return battle.enemies; },
     get historia() { return historiaEnCurso; }, get historiasPendientes() { return historiasPendientes; },

@@ -98,6 +98,35 @@ function teñida(img, color) {
 const rgb = (c, a = 1) => `rgba(${c?.r ?? 255},${c?.g ?? 255},${c?.b ?? 255},${a})`;
 
 /** Arrastre/rueda de listas; el árbol utiliza ambos ejes (dirección 3). */
+/**
+ * D99: inercia de ui::ScrollView de Cocos2d-x 3.7 (endRecordSlidAction): al soltar, la lista sigue a
+ * min(distancia del arrastre / tiempo con el dedo, 1000) px/s y frena 1000 px/s². Sin arrastres de menos de 0.016 s.
+ * Constantes del motor (UIScrollView.cpp: AUTOSCROLLMAXSPEED y aceleración −1000), no leídas del binario.
+ */
+export const INERCIA_LISTA = Object.freeze({ maxima: 1000, frenado: 1000, tiempoMinimo: 0.016 });
+
+/** Velocidad inicial (px de diseño/s, en los ejes de desplazarLista) de un arrastre `d` = [dx, dy] en `t` s. */
+export function velocidadInercia(n, [dx, dy], t, g = INERCIA_LISTA) {
+  if (!(t > g.tiempoMinimo)) return null;
+  const dir = n.interior?.direccion;
+  const v = dir === 2 ? [dx, 0] : dir === 3 ? [dx, dy] : [0, dy];
+  const d = Math.hypot(...v);
+  if (!d) return null;
+  const rapidez = Math.min(d / t, g.maxima);
+  return [(v[0] / d) * rapidez, (v[1] / d) * rapidez];
+}
+
+/** Avanza la inercia `i` = { lista, v: [vx, vy] } dt segundos; devuelve false cuando se ha parado. */
+export function avanzarInercia(i, dt, g = INERCIA_LISTA) {
+  const rapidez = Math.hypot(...i.v);
+  if (!rapidez) return false;
+  const nueva = Math.max(0, rapidez - g.frenado * dt), f = nueva / rapidez;
+  const media = (rapidez + nueva) / 2 / rapidez;
+  desplazarLista(i.lista, i.v[0] * media * dt, i.v[1] * media * dt);
+  i.v = [i.v[0] * f, i.v[1] * f];
+  return nueva > 0;
+}
+
 export function desplazarLista(n, dx, dy, desde = null) {
   const dir = n.interior?.direccion;
   const y = desde?.y ?? n._desplaz ?? 0, x = desde?.x ?? n._desplazX ?? 0;
