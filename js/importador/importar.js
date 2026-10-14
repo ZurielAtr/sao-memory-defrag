@@ -13,6 +13,7 @@ import { keystream, esCCZp, descifrar } from './ccz.js';
 const LIB = 'lib/armeabi-v7a/libcocos2dcpp.so';
 const SPLIT_LIB = 'split_config.armeabi_v7a.apk';
 const ASSETS = 'assets/en/';
+const AVISO_BYTES = 16 * 2 ** 20;
 
 /** Qué trae cada archivo elegido: { blob, nombre, tipo: 'apks' | 'apk', entradas, apks: [entradas .apk de dentro] }. */
 export async function examinar(blob, nombre = '') {
@@ -71,13 +72,19 @@ export async function importar({ archivos, destino, avance = () => {}, saltar = 
 
   const escritas = new Map(); // ruta en minúsculas → ruta (como descifrar_todo.py: gana la última)
   let bytes = 0;
-  const guardar = async (nombre, datos) => {
+  // D102: registrar decide antes de leer la entrada si ya estaba guardada (al continuar una importación cortada
+  // no se cargan en memoria los archivos que se van a saltar; en el iPhone eso hacía que Safari cerrara la página).
+  const registrar = async (nombre) => {
     const ruta = nombre.slice(ASSETS.length);
     const clave = ruta.toLowerCase();
     const antes = escritas.get(clave);
     if (antes !== undefined && antes !== ruta) await destino.borrar?.(antes);
     escritas.set(clave, ruta);
-    if (saltar && (await saltar(ruta))) return;
+    // Sólo se salta la primera aparición en esta pasada: si un paquete posterior trae el mismo archivo, gana el
+    // último (como descifrar_todo.py) y hay que volver a escribirlo aunque ya estuviera guardado.
+    return { ruta, saltar: Boolean(saltar && antes === undefined && (await saltar(ruta))) };
+  };
+  const guardar = async (ruta, datos) => {
     const out = esCCZp(datos) ? await descifrar(datos, ks) : datos;
     bytes += out.length;
     await destino.escribir(ruta, out);
@@ -87,7 +94,8 @@ export async function importar({ archivos, destino, avance = () => {}, saltar = 
   for (const p of partes) {
     if (!p.apk) {
       for (const e of p.entradas) {
-        await guardar(e.nombre, await bytesEntrada(p.f.blob, e));
+        const reg = await registrar(e.nombre);
+        if (!reg.saltar) await guardar(reg.ruta, await bytesEntrada(p.f.blob, e));
         hecho += e.tam;
         if (escritas.size % 50 === 0) informar(e.nombre);
       }
@@ -99,13 +107,20 @@ export async function importar({ archivos, destino, avance = () => {}, saltar = 
       transform(chunk, ctl) {
         base += chunk.length;
         hecho = base;
+        // D102: también cada 16 MB (vídeos y sonidos grandes: pocos archivos y mucho tamaño).
+        if (Math.floor(base / AVISO_BYTES) !== Math.floor((base - chunk.length) / AVISO_BYTES)) informar('');
         ctl.enqueue(chunk);
       },
     });
-    await recorrerZip((await flujoEntrada(p.f.blob, p.apk)).pipeThrough(contador), (e) => {
+    await recorrerZip((await flujoEntrada(p.f.blob, p.apk)).pipeThrough(contador), async (e) => {
       if (!e.nombre.startsWith(ASSETS) || e.nombre.endsWith('/')) return null;
+      const reg = await registrar(e.nombre);
+      if (reg.saltar) {
+        if (escritas.size % 50 === 0) informar(e.nombre);
+        return null; // recorrerZip la salta sin acumularla
+      }
       return async (comp) => {
-        await guardar(e.nombre, await contenido(e, comp));
+        await guardar(reg.ruta, await contenido(e, comp));
         if (escritas.size % 50 === 0) informar(e.nombre);
       };
     });

@@ -18,16 +18,35 @@ const u16 = (b, o) => b[o] | (b[o + 1] << 8);
 const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
 const u64 = (b, o) => u32(b, o) + u32(b, o + 4) * 2 ** 32;
 
-async function trozo(blob, ini, fin) {
-  // D101: en el iPhone la lectura del archivo elegido puede fallar de forma pasajera; se reintenta.
+// D101/D102: en el iPhone la lectura del archivo elegido falla a veces («The I/O read operation failed»,
+// NotReadableError). Cada lectura es un trozo nuevo del archivo y se reintenta con espera creciente.
+export const REINTENTOS_LECTURA = 6;
+export const TROZO_FLUJO = 4 * 2 ** 20;
+const lecturaTransitoria = (e) => ['NotReadableError', 'UnknownError'].includes(e?.name) || /I\/O read|transient|connection is lost/i.test(e?.message ?? '');
+
+export async function trozo(blob, ini, fin, espera = (ms) => new Promise((r) => setTimeout(r, ms))) {
   for (let i = 0; ; i++) {
     try {
       return new Uint8Array(await blob.slice(ini, fin).arrayBuffer());
     } catch (e) {
-      if (i >= 3 || !['NotReadableError', 'UnknownError'].includes(e?.name)) throw e;
-      await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      if (i >= REINTENTOS_LECTURA || !lecturaTransitoria(e)) throw e;
+      await espera(500 * (i + 1));
     }
   }
+}
+
+/** D102: flujo de [ini, fin) del archivo leído en trozos de TROZO_FLUJO con reintentos (en vez de Blob.stream()). */
+export function flujoRango(blob, ini, fin, opciones = {}) {
+  let pos = ini;
+  const tam = opciones.trozo ?? TROZO_FLUJO;
+  return new ReadableStream({
+    async pull(ctl) {
+      if (pos >= fin) { ctl.close(); return; }
+      const hasta = Math.min(fin, pos + tam);
+      ctl.enqueue(await trozo(blob, pos, hasta, opciones.espera));
+      pos = hasta;
+    },
+  });
 }
 
 /** Campo extra ZIP64 (0x0001): reemplaza los valores que valen 0xFFFFFFFF, en orden. */
@@ -95,7 +114,7 @@ async function rangoDatos(blob, e) {
 /** Flujo (ReadableStream) con el contenido descomprimido de una entrada. */
 export async function flujoEntrada(blob, e) {
   const [ini, fin] = await rangoDatos(blob, e);
-  const crudo = blob.slice(ini, fin).stream();
+  const crudo = flujoRango(blob, ini, fin);
   if (e.metodo === 0) return crudo;
   if (e.metodo === 8) return crudo.pipeThrough(new DecompressionStream('deflate-raw'));
   throw new Error(`método de compresión ${e.metodo} no soportado (${e.nombre})`);

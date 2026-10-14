@@ -202,8 +202,11 @@ async function importar(archivos = [...$('archivo').files], urls = null) {
       const a = ultimoAvance, fase = a ? fases()[a.fase]?.[2] ?? a.fase : null, pct = a ? Math.floor((a.fraccion ?? 0) * 100) : 0;
       const donde = fase ? t(` (en «${fase}», ${pct} %${a.archivos ? `, ${a.archivos} archivos` : ''})`, ` (during “${fase}”, ${pct} %${a.archivos ? `, ${a.archivos} files` : ''})`) : '';
       const seguir = await importacionPendiente().catch(() => null);
+      // D102: si falla la lectura del archivo elegido, en el iPhone suele ayudar tenerlo en «En mi iPhone».
+      const lectura = e.nombre === 'NotReadableError' || /I\/O read/i.test(e.message);
+      const consejo = lectura ? t(' El navegador no pudo leer el archivo: si está en iCloud Drive, cópialo a «En mi iPhone» (app Archivos) y elígelo desde ahí.', ' The browser could not read the file: if it is in iCloud Drive, copy it to “On My iPhone” (Files app) and choose it from there.') : '';
       error(() => t(`No se pudo importar${donde}: ${e.message}.${seguir ? ' Lo ya descifrado se ha guardado: pulsa «Importar» otra vez con el mismo archivo para continuar donde se quedó.' : ''} En el móvil, mantén la página abierta y la pantalla encendida mientras importa.`,
-        `Import failed${donde}. Technical details: ${e.message}.${seguir ? ' The assets decrypted so far were kept: press “Import” again with the same file to continue where it stopped.' : ''} On a phone, keep this page open and the screen on while importing.`));
+        `Import failed${donde}. Technical details: ${e.message}.${seguir ? ' The assets decrypted so far were kept: press “Import” again with the same file to continue where it stopped.' : ''} On a phone, keep this page open and the screen on while importing.`) + consejo);
     }
     $('progreso').hidden = true;
   } finally {
