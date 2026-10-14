@@ -10,6 +10,8 @@
   #nota { position: fixed; right: 8px; top: 6px; color: #5b6b8c; font: 11px "Segoe UI", system-ui, sans-serif;
     opacity: .7; pointer-events: auto; }
   #nota a { color: #4fb3ff; }
+  /* D97: los gestos (pellizco del Árbol, arrastres) los maneja el juego, no el navegador. */
+  #c { touch-action: none; }
   @media (max-height: 560px), (max-width: 520px) { #nota { display: none; } }
 </style>
 </head>

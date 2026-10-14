@@ -37,6 +37,10 @@ import { sumarStatsArbol } from '../habilidades.js';
 import { clavesDisponibles, estadoMision, estadoCapitulo } from './disponibilidad_misiones.js';
 import {DESTINOS_FOOTER,PENDIENTES_MENU,crearMenuPrincipal,crearCiudadTown,crearVentanaMenu,crearAvisoPrincipal,objetivosMenu,moverCamaraCiudad} from './menus_principales.js';
 import {AvatarTown,cargarAvatarTown,cargarSombraTown} from './town_avatar.js';
+import {nodoModelo,cargarModelo} from './modelo_personaje.js';
+import {componerEstadoPersonaje,componerInfoPersonaje} from './estado_personaje.js';
+import {DESTINOS_MENU_LOCALES,objetosDeCuenta,componerObjetos,componerPerfil} from './menu_destinos.js';
+import {estadoHabilidades} from '../habilidades.js';
 import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.js';
 import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
@@ -231,9 +235,18 @@ const punto = (ev) => {
   const r = canvas.getBoundingClientRect();
   return [(ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height];
 };
+// D97: pellizco con dos dedos sobre el Árbol (ScrollView con zoom del original).
+const punteros = new Map();
+let pellizco = null;
+const distancia = () => { const [a, b] = [...punteros.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
 canvas.addEventListener('pointerdown', (ev) => {
   estado.foco=null;canvas.focus({preventScroll:true});
   const [x, y] = punto(ev);
+  punteros.set(ev.pointerId, [x, y]);
+  if (punteros.size === 2) {
+    const lista = nodoBajo(x, y, (z) => z.interior);
+    if (lista?._zoomArbol) { pellizco = { lista, d0: distancia(), z0: lista._zoomArbol.zoom }; if (toque) { toque.arrastre = true; if (toque.n) toque.n._pulsado = false; } return; }
+  }
   const n = nodoBajo(x, y, (z) => z.nombre in estado.acciones || z.nombre in estado.largas);
   const lista = nodoBajo(x, y, (z) => z.interior);
   toque = { n, lista, x, y, d0: lista?._desplaz ?? 0, dx0: lista?._desplazX ?? 0, arrastre: false, t0: performance.now(), largo: false };
@@ -249,6 +262,8 @@ canvas.addEventListener('pointerdown', (ev) => {
   }
 });
 canvas.addEventListener('pointermove', (ev) => {
+  if (punteros.has(ev.pointerId)) punteros.set(ev.pointerId, punto(ev));
+  if (pellizco) { if (punteros.size === 2) pellizco.lista._zoomArbol.aplicar(pellizco.z0 * distancia() / Math.max(1, pellizco.d0)); return; }
   if (!toque?.lista) return;
   const [x, y] = punto(ev);
   const dy = y - toque.y;
@@ -260,7 +275,10 @@ canvas.addEventListener('pointermove', (ev) => {
     if (toque.n) toque.n._pulsado = false;
   }
 });
-canvas.addEventListener('pointerup', () => {
+const soltarPuntero = (ev) => { punteros.delete(ev.pointerId); if (punteros.size < 2) pellizco = null; };
+canvas.addEventListener('pointercancel', soltarPuntero);
+canvas.addEventListener('pointerup', (ev) => {
+  soltarPuntero(ev);
   const t = toque;
   toque = null;
   if (!t) return;
@@ -276,6 +294,8 @@ canvas.addEventListener('wheel', (ev) => {
   const lista = nodoBajo(x, y, (z) => z.interior);
   if (!lista) return;
   ev.preventDefault();
+  // D97: Ctrl + rueda (o el gesto de pellizco del panel táctil) cambia el zoom del Árbol.
+  if (ev.ctrlKey && lista._zoomArbol) { lista._zoomArbol.aplicar(lista._zoomArbol.zoom * Math.exp(-ev.deltaY * 0.002)); return; }
   desplazarLista(lista, lista.interior?.direccion === 2 || ev.shiftKey ? ev.deltaY : ev.deltaX, ev.shiftKey ? 0 : ev.deltaY);
 }, { passive: false });
 addEventListener('keydown', (ev) => {
@@ -290,6 +310,7 @@ addEventListener('keydown', (ev) => {
     const atras=ev.shiftKey||['ArrowLeft','ArrowUp'].includes(ev.key),i=objetivos.findIndex(z=>z.n.nombre===estado.foco);
     estado.foco=objetivos[i<0?(atras?objetivos.length-1:0):(i+(atras?-1:1)+objetivos.length)%objetivos.length].n.nombre;
   }else if(['Enter',' '].includes(ev.key)&&estado.foco){ev.preventDefault();const n=objetivos.find(z=>z.n.nombre===estado.foco)?.n;if(n)estado.acciones[n.nombre]?.(n);}
+  else if(['+','-','='].includes(ev.key)){const z=estado.capas.flatMap(c=>c.pantalla?.zonas??[]).find(z=>z.n._zoomArbol)?.n._zoomArbol;if(z){ev.preventDefault();z.aplicar(z.zoom*(ev.key==='-'?1/1.25:1.25));}}
   else if(['PageUp','PageDown'].includes(ev.key)){const lista=estado.capas.flatMap(c=>c.pantalla?.zonas??[]).find(z=>z.n.interior)?.n;if(lista){ev.preventDefault();desplazarLista(lista,0,ev.key==='PageUp'?-500:500);}}
 });
 
@@ -346,10 +367,14 @@ async function abrirMenu(){
   const ventana=await crearVentanaMenu();
   if(ticket!==estado.aperturaPrincipal)return;
   const pieCapa=anterior.capas.find(c=>c.pantalla?._pieComun);
-  const mensajes={announce:'Los avisos del servicio original todavía no están disponibles.',notification:'No hay notificaciones del servicio original en esta partida local.',item:'El almacén de objetos todavía está pendiente. Los materiales guardados se muestran al adquirir mejoras.',gift_box:'La bandeja de regalos todavía está pendiente.',exchangeshop:'La tienda de intercambio de este menú todavía está pendiente.',mission:'Las tareas y recompensas de este menú todavía están pendientes.',status:'El estado de usuario completo todavía está pendiente.',others:'Las opciones originales de este submenú todavía están pendientes.',guild:'Los gremios todavía están pendientes.',friend:'La lista de amigos todavía está pendiente.'};
-  const delMenu={};
-  for(const d of ventana.destinosMenuOriginal??[])delMenu[d.boton]=()=>avisoPrincipal(d.titulo,mensajes[d.tipo]);
+  // D98: destinos nativos (FUN_00a53324). Objetos y Estado funcionan; el resto no hace nada todavía.
   const volver=()=>escena(anterior.pantalla,anterior.capas,anterior.acciones,{alTocarFondo:anterior.alTocarFondo,cada:anterior.cada,teclado:anterior.teclado});
+  const delMenu={};
+  for(const d of ventana.destinosMenuOriginal??[]){
+    const destino=DESTINOS_MENU_LOCALES[d.tipo];
+    // Los demás botones conservan su pulsación pero no tienen acción (no reconstruidos).
+    delMenu[d.boton]=destino==='objetos'?()=>objetos(volver):destino==='perfil'?()=>perfilUsuario(volver):()=>{};
+  }
   popupMenu('menu',anterior.capas.filter(c=>c!==pieCapa),ventana,delMenu,{cerrar:['button_footer_menu','button_footer_return','button_footer_talk'],
     alCerrar:volver,encima:pieCapa?[pieCapa]:[]});
 }
@@ -420,6 +445,78 @@ function avatarTown(ciudad){
   }).catch(e=>console.warn('town: no se pudo cargar el avatar',e));
   // El pie tapa el borde inferior (198 de diseño, D95): un toque ahí no mueve al avatar.
   return (x,y)=>{const b=baseCanvas(canvas);if((y-b[5])/b[3]<198)return;avatar.tocar(x,y);};
+}
+
+// ---------- D98: MENU → Objetos / Estado; Party → estado del personaje ----------
+/** ChangeSceneEvent 31: almacén de objetos (item_list_s). El regreso vuelve a la escena anterior. */
+async function objetos(volver){
+  const ticket=++estado.aperturaPrincipal;await cargarCuenta();
+  const [bg,p,w,vuelta]=await Promise.all([fondo(FONDO_MENU),Pantalla.cargar('ui/item_list/item_list_s.csb'),Pantalla.cargar('ui/item_list/item_list_item_widget_s.csb'),pie()]);
+  componerObjetos(p,w,objetosDeCuenta(estado.cuenta,master().data.objetos),master().data.tiposObjeto);
+  await p.precargar();
+  if(ticket!==estado.aperturaPrincipal)return;
+  escena('objetos',[bg,{pantalla:p},{pantalla:vuelta}],{button_footer_return:()=>(volver?volver():home())},{teclado:true});
+}
+
+/** UserProfileEvent::showUserProfilePopup: perfil propio (common_status_profile_s). */
+async function perfilUsuario(volver){
+  const ticket=++estado.aperturaPrincipal;await cargarCuenta();
+  const [p,estrellas]=await Promise.all([Pantalla.cargar('ui/common/common_status_profile_s.csb'),Pantalla.cargar('ui/common/common_rarity_widget_s.csb')]);
+  const grupo=await Promise.all([0,1,2].map(async(k)=>{const c=miembroEn(k);if(!c)return null;const f=await fichaPersonaje(c.character_id);
+    return {miniatura:MINIATURA(c.character_id),nivel:c.level,arma:f?.arma??master().personaje(c.character_id)?.arma,rareza:f?.rareza??0,lider:k===0};}));
+  const lider=miembroEn(0),fl=lider&&await fichaPersonaje(lider.character_id);
+  componerPerfil(p,estrellas,{nombre:estado.cuenta?.user?.name,rango:1,comentario:'',grupo,
+    lider:lider?{nombre:nombrePersonaje(lider.character_id),rareza:fl?.rareza??0,retrato:fl?.retrato??lider.character_id}:null});
+  await p.precargar();
+  if(ticket!==estado.aperturaPrincipal)return;
+  popupMenu('perfil',estado.capas,p,{button_user_edit:()=>{},button_dungeon_list:()=>{}},{cerrar:['button_close'],alCerrar:volver,alfaVelo:.8});
+}
+
+/** Capa de estado del personaje (UIFile 50027, variante ver2). */
+async function estadoPersonaje(m,k,pestana='status'){
+  const ticket=++estado.aperturaPrincipal;await cargarCuenta();
+  const c=miembroEn(k);if(!c)return equipo(m);
+  const cat=master(),hc=cat.habilidades(),ficha=await fichaPersonaje(c.character_id),pj=cat.personaje(c.character_id);
+  const [bg,p,estrellas]=await Promise.all([fondo(FONDO_MENU),Pantalla.cargar('ui/common/common_party_character_status_s.csb'),Pantalla.cargar('ui/common/common_rarity_widget_s.csb')]);
+  const stats=sumarStatsEquipo(sumarStatsArbol(characterStats({personajes:{[c.character_id]:ficha}},c.character_id,c.level),ficha,c,hc),equiposDeCuenta(estado.cuenta,c,cat));
+  const habs=estadoHabilidades(pj,c,hc),base=cat.expParaNivel(c.level),sig=cat.expParaNivel(c.level+1);
+  const nombrePasiva=(id)=>hc.nombresPasivas?.[id];
+  componerEstadoPersonaje(p,estrellas,{pestana,nombre:nombrePersonaje(c.character_id),rareza:ficha?.rareza??pj?.rareza??0,retrato:ficha?.retrato??c.character_id,
+    arma:ficha?.arma??pj?.arma,armaNombre:ficha?.armaNombre?ficha.armaNombre[0].toUpperCase()+ficha.armaNombre.slice(1):'',nivel:c.level,
+    exp:[Math.max(0,(c.exp??0)-base),Math.max(0,sig-base)],stats,
+    pasivas:[...habs.pasivas.filter((x)=>x.estado>0).map((x)=>nombrePasiva(x.id)),...habs.extras.map(nombrePasiva)].filter(Boolean),
+    ranuras:(hc.ranuras?.[c.character_id]??[]).slice().sort((a,b)=>a.ranura-b.ranura).map((o)=>{const r=habs.ranuras.find((x)=>x.ranura===o.ranura);
+      return {icono:(r??hc.fichas?.[o.id]?.[1])?.icono??'slot_skill_icon_job_1',nivel:r?.nivel??0};})});
+  p.mostrar('button_zoom_out',false);
+  await p.precargar();
+  if(ticket!==estado.aperturaPrincipal)return;
+  const acciones={button_close:()=>equipo(m),
+    button_arms_edit:()=>{estado.volverEquipo=()=>estadoPersonaje(m,k,pestana);return listaEquipo(m,k);},
+    button_ability_edit:()=>habilidades(m,k,'arbol'),button_slot_skill_edit:()=>habilidades(m,k,'ranuras'),
+    // Lupa: ver la carta completa (oculta la información) y volver.
+    button_zoom_in:()=>{for(const n of ['general_info_bar','character_status_ver2','tab_button_bar_new','button_arms_edit','button_ability_edit','button_slot_skill_edit','button_zoom_in'])p.mostrar(n,false);p.mostrar('button_zoom_out',true);},
+    button_zoom_out:()=>estadoPersonaje(m,k,pestana)};
+  for(const t of ['status','ability','skill_slot','assist_slot'])acciones[`pestana_${t}`]=()=>estadoPersonaje(m,k,t);
+  for(const g of ['sword','battle','equip','profile'])acciones[`info_${g}`]=()=>infoPersonaje(m,k,g,pestana);
+  escena('estado-personaje',[bg,{pantalla:p}],acciones,{teclado:true});
+}
+
+/** showCharacterDetailEventName: popup «Character Info» (600028) en la página pedida. */
+async function infoPersonaje(m,k,pagina,pestana){
+  const ticket=++estado.aperturaPrincipal;
+  const c=miembroEn(k);if(!c)return equipo(m);
+  const cat=master(),hc=cat.habilidades(),ficha=await fichaPersonaje(c.character_id),pj=cat.personaje(c.character_id);
+  const [popup,paginas]=await Promise.all([Pantalla.cargar('ui/common/common_popup_character_info.csb'),Pantalla.cargar('ui/common/common_character_status_widget.csb')]);
+  const habs=estadoHabilidades(pj,c,hc);
+  const activas=habs.activas.filter((a)=>a.id>0).map((a)=>{const f=hc.activas?.[a.id];return f?{nombre:f.name,descripcion:f.description,extra:`MP ${f.cost}`}:null;}).filter(Boolean);
+  const pasivas=[...habs.pasivas.filter((x)=>x.estado>0).map((x)=>x.id),...habs.extras].map((id)=>hc.nombresPasivas?.[id]).filter(Boolean).map((n)=>({nombre:n}));
+  const piezas=Object.keys(opcionesEquipo).map((r)=>equipoDeCuenta(estado.cuenta,c,cat,r)).filter(Boolean).map((e)=>({nombre:e.nombre,nivel:e.nivel}));
+  componerInfoPersonaje(popup,paginas,{pagina,nombre:nombrePersonaje(c.character_id),retrato:ficha?.retrato??c.character_id,
+    descripcion:pj?.descripcion??'',mundo:'SAO',activas,pasivas,equipo:piezas});
+  await Promise.all([popup.precargar(),paginas.precargar()]);
+  if(ticket!==estado.aperturaPrincipal)return;
+  const acciones={};for(const g of ['sword','battle','equip','profile'])acciones[`info_${g}`]=()=>infoPersonaje(m,k,g,pestana);
+  popupMenu('info-personaje',estado.capas.filter((x)=>!x.velo&&x.pantalla?.ruta!==popup.ruta),popup,acciones,{cerrar:['button_cancel'],alCerrar:()=>estadoPersonaje(m,k,pestana),alfaVelo:.8});
 }
 
 async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos':'base',uids:[],uid:null,nivel:null,destino:null,mensaje:''}){
@@ -922,6 +1019,13 @@ async function equipo(m,volver=estado.volverEquipo) {
         // Conservar 252×834, ancla y posición originales del CSB.
         delete fig.cubrir;
       }
+      // D97: modelo 2D (FUN_00b76c4c): en dummy_character_node, x −10, alto 0.33 × background_character.
+      const pies = widget.buscar('dummy_character_node', w), marco = widget.buscar('background_character', w);
+      if (pies && marco) {
+        const modelo = nodoModelo(`modelo_${k}`, { x: -10, y: 0, alto: marco.alto * 0.33 });
+        pies.hijos.push(modelo);
+        void cargarModelo(modelo, ficha).catch((e) => console.warn('Party: modelo no disponible', e));
+      }
     }
     const fondoHueco=widget.buscar(lleno?'background_character':'background_not_character',w);
     fondoHueco.nombre=`hueco_${k}`;fondoHueco.tactil=true;
@@ -934,7 +1038,8 @@ async function equipo(m,volver=estado.volverEquipo) {
   const n = Math.max(1, personajes().length);
   const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; equipo(m); };
   escena('equipo', [{ pantalla: p }, { pantalla: vuelta }], {
-    hueco_0: () => listaPersonajes(m, 0), hueco_1: () => listaPersonajes(m, 1), hueco_2: () => listaPersonajes(m, 2),
+    // D98: ranura llena → estado del personaje (FUN_00b77c40); vacía → elegir personaje.
+    ...Object.fromEntries([0, 1, 2].map((k) => [`hueco_${k}`, () => (miembroEn(k) ? estadoPersonaje(m, k) : listaPersonajes(m, k))])),
     button_left_arrow: mover(-1), button_right_arrow: mover(1),
     button_character_list: () => listaPersonajes(m),
     button_party_edit: () => listaPersonajes(m),
@@ -993,7 +1098,10 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
       efectos.liberar(liberar.local, [...disponibles].filter((x) => !previo.disponibles.has(x) && x !== liberar.local));
     estado.arbolLiberar = null; estado.arbolPrevio = { uid: c.uid, disponibles };
     if (efectos) pantalla._tableroArbol.alDibujar = (ctx) => efectos.dibujar(ctx);
+    // D97: durante la liberación no se aceptan toques en los nodos (AbilityBoardEvent).
+    if (efectos) for (const k of Object.keys(acciones)) if (k.startsWith('nodo_')) { const f = acciones[k]; acciones[k] = (n) => efectos.ocupado() ? undefined : f(n); }
   }
+  if (pantalla._modeloArbol) void cargarModelo(pantalla._modeloArbol, ficha).catch((e) => console.warn('Árbol: modelo no disponible', e));
   escena('habilidades', [bg, { pantalla }, { pantalla: vuelta }], acciones,{teclado:true,cada:efectos?(t)=>efectos.actualizar(t):null});
 }
 

@@ -4,6 +4,7 @@ import { recorrer } from './csb.js';
 import { consultarRanura, consultarNodo, inventarioMateriales, nodosDelPersonaje, estadoHabilidades, DIRECCIONES_LIMITE } from '../habilidades.js';
 import { posicionNodo, limitesTablero } from './composicion_habilidades.js';
 import { esperaNodo, nodoAbierto } from './efectos_arbol.js';
+import { nodoModelo } from './modelo_personaje.js';
 import { envolverTexto } from './historia_menus.js';
 
 const FUENTE = 'fonts/SAOFont-Regular_v1.ttf';
@@ -21,22 +22,58 @@ function ajustarTexto(p, nombre, valor, ancho, tam, desde = p.raiz) {
 }
 
 /** FUN_005c79d0: filas alternas, 144 unidades verticales, 288 horizontales. */
-export function componerTablero(p, modelo, nodos, consultas, elegido, abrir) {
+// D97: FUN_005c79d0 pone el tablero en un ScrollView 2D con zoom (FUN_00d55664) limitado entre el
+// encuadre completo (mínimo, 0x2b4) y 1.0 (máximo, 0x2b8); empieza en 928/720, que queda en 1.0.
+export const ZOOM_ARBOL = Object.freeze({ maximo: 1, inicial: 1 });
+const vistasArbol = new Map(); // personaje → zoom elegido por el jugador
+
+/** Zoom mínimo: el tablero completo cabe en la vista (750×768 entre el pie y el panel de estado). */
+export const zoomMinimoArbol = (limites, ancho = 750, alto = 768) => Math.min(ZOOM_ARBOL.maximo, ancho / limites.ancho, alto / limites.alto);
+
+/** Medidas del contenido para un zoom: tamaño interior y desplazamiento que centra un tablero menor que la vista. */
+export function medidasTablero(limites, zoom, ancho = 750, alto = 768) {
+  const w = Math.max(ancho, limites.ancho * zoom), h = Math.max(alto, limites.alto * zoom);
+  return { ancho: w, alto: h, ox: (w - limites.ancho * zoom) / 2, oy: (h - limites.alto * zoom) / 2 };
+}
+
+export function componerTablero(p, modelo, nodos, consultas, elegido, abrir, { clave = null } = {}) {
   const limites = limitesTablero(nodos), zona = panel('lista_habilidades', 0, 160, 750, 768);
-  // Encuadre inicial proporcional; selección legible con desplazamiento 2D.
-  const escala = elegido == null ? Math.min(1, 750 / limites.ancho, 768 / limites.alto) : .65;
-  const ancho = Math.max(750, limites.ancho * escala), alto = Math.max(768, limites.alto * escala);
-  zona.interior = { ancho, alto, direccion: 3 };
-  const ox = (ancho - limites.ancho * escala) / 2, oy = (alto - limites.alto * escala) / 2;
-  const pos = new Map(nodos.map(n => { const [x, y] = posicionNodo(n.local);
-    return [n.local, [(x - limites.x) * escala + ox, (y - limites.y) * escala + oy]]; }));
+  const minimo = zoomMinimoArbol(limites);
+  let zoom = Math.max(minimo, Math.min(ZOOM_ARBOL.maximo, vistasArbol.get(clave) ?? ZOOM_ARBOL.inicial));
+  const tablero = { ...base, clase: 'Node', nombre: 'tablero_arbol', ancho: 0, alto: 0, hijos: [] };
+  const colocar = (z) => {
+    const m = medidasTablero(limites, z);
+    zona.interior = { ancho: m.ancho, alto: m.alto, direccion: 3 };
+    Object.assign(tablero, { x: m.ox, y: m.oy, escalaX: z, escalaY: z });
+    return m;
+  };
+  let medidas = colocar(zoom);
+  zona.hijos.push(tablero);
+  // Posiciones del tablero nativo, relativas a su esquina; el contenedor aplica el zoom.
+  const pos = new Map(nodos.map(n => { const [x, y] = posicionNodo(n.local); return [n.local, [x - limites.x, y - limites.y]]; }));
+  const centrar = ([x, y]) => {
+    const cx = x * zoom + medidas.ox, cy = y * zoom + medidas.oy;
+    zona._desplazX = Math.max(0, Math.min(medidas.ancho - 750, cx - 375));
+    zona._desplaz = Math.max(0, Math.min(medidas.alto - 768, medidas.alto - cy - 384));
+  };
+  /** Cambia el zoom manteniendo fijo el punto del tablero en el centro de la vista. */
+  zona._zoomArbol = {
+    minimo, maximo: ZOOM_ARBOL.maximo, get zoom() { return zoom; },
+    aplicar(z) {
+      z = Math.max(minimo, Math.min(ZOOM_ARBOL.maximo, z)); if (z === zoom) return zoom;
+      const cx = (zona._desplazX ?? 0) + 375, cy = medidas.alto - (zona._desplaz ?? 0) - 384;
+      const bx = (cx - medidas.ox) / zoom, by = (cy - medidas.oy) / zoom;
+      zoom = z; medidas = colocar(z); vistasArbol.set(clave, z); centrar([bx, by]);
+      return zoom;
+    },
+  };
   const acciones = {};
   for (const n of nodos) {
     const a = pos.get(n.padre), b = pos.get(n.local); if (!a) continue;
-    const dx = b[0] - a[0], dy = b[1] - a[1], linea = panel(`enlace_${n.local}`, a[0], a[1], Math.hypot(dx, dy), 3);
+    const dx = b[0] - a[0], dy = b[1] - a[1], linea = panel(`enlace_${n.local}`, a[0], a[1], Math.hypot(dx, dy), 4);
     linea.rotX = -Math.atan2(dy, dx) * 180 / Math.PI; linea.anclaY = .5;
     linea.panel = { recorte: false, tipoColor: 1, opacidad: 255, color: { r: 170, g: 195, b: 190 } };
-    zona.hijos.push(linea);
+    tablero.hijos.push(linea);
   }
   for (const n of nodos) {
     const q = consultas.get(n.local), [x, y] = pos.get(n.local), estado = q.adquirido ? '30' : q.disponible ? '20' : '10';
@@ -53,15 +90,20 @@ export function componerTablero(p, modelo, nodos, consultas, elegido, abrir) {
     modelo.texto('text_17', n.nivel, molde);
     for (const k of ['10', '20', '30']) ajustarTexto(modelo, `text_btn_${k}`,
       `${n.etiqueta ?? n.nombre}${Number.isFinite(n.valor) ? `+${n.valor}` : ''}`, 115, 21, molde);
-    const b = panel(`nodo_${n.local}`, x - 72 * escala, y - 72 * escala, 144, 144, [molde]);
-    Object.assign(b, { escalaX: escala, escalaY: escala, tactil: n.tipo !== 0 }); b.panel.recorte = false;
-    zona.hijos.push(b); if (n.tipo !== 0) acciones[b.nombre] = () => abrir('arbol', n.local);
+    const b = panel(`nodo_${n.local}`, x - 72, y - 72, 144, 144, [molde]);
+    Object.assign(b, { tactil: n.tipo !== 0 }); b.panel.recorte = false;
+    // D97: el nodo raíz (FUN_007f423c) cambia image_icon por el modelo 2D del personaje:
+    // alto 2.5 × image_icon (60) y los pies en el borde inferior del icono.
+    if (n.tipo === 0) {
+      const icono = modelo.buscar('image_icon', molde);
+      const pies = nodoModelo('modelo_arbol', { x: 72 + (icono?.x ?? 0), y: 72 + (icono?.y ?? 0) - (icono?.alto ?? 60) * .5, alto: (icono?.alto ?? 60) * 2.5 });
+      b.hijos.push(pies); p._modeloArbol = pies;
+    }
+    tablero.hijos.push(b); if (n.tipo !== 0) acciones[b.nombre] = () => abrir('arbol', n.local);
   }
-  if (elegido != null && pos.has(elegido)) {
-    const [x, y] = pos.get(elegido);
-    zona._desplazX = Math.max(0, Math.min(ancho - 750, x - 375));
-    zona._desplaz = Math.max(0, Math.min(alto - 768, alto - y - 384));
-  }
+  // Vista inicial: el nodo elegido o, si no hay, el nodo raíz con el personaje.
+  const foco = elegido != null && pos.has(elegido) ? elegido : nodos.find(n => n.tipo === 0)?.local;
+  if (pos.has(foco)) centrar(pos.get(foco));
   // D95: estado de animación de cada nodo (FUN_007f2e04) para los efectos SpriteStudio.
   p._tableroArbol = zona;
   p._nodosArbol = nodos.map(n => { const q = consultas.get(n.local);
@@ -199,7 +241,7 @@ export async function crearPantallaHabilidades(o) {
   if (modo === 'arbol') {
     const [modelo, status] = await Promise.all([Pantalla.cargar('ui/ability_board/ability_board_node_s.csb'), Pantalla.cargar('ui/ability_board/ability_board_status_s.csb')]);
     const nodos = nodosDelPersonaje(pj, cat), consultas = new Map(nodos.map(n => [n.local, consultarNodo(pj, c, cat, cuenta, n.local)]));
-    Object.assign(acciones, componerTablero(p, modelo, nodos, consultas, seleccionado, abrir));
+    Object.assign(acciones, componerTablero(p, modelo, nodos, consultas, seleccionado, abrir, { clave: c.uid ?? pj.id }));
     p.buscar('status_node').hijos = [status.raiz];
     ajustarTexto(status, 'text_character_name', pj.nombre.replace(/^\[[^\]]*\]\s*/, ''), 600, 27);
     status.buscar('dummy_job_icon').imagen = recurso(`images/icon/character/icon_job_${pj.arma}.png`);

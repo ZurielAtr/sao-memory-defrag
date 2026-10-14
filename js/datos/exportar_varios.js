@@ -134,6 +134,8 @@ export async function exportarApi(fuente, salida) {
   for (const r of await fuente.md('character')) characters[r.f0] = { nombre: get(r, 'f2'), rareza: get(r, 'f1'), arma: get(r, 'f3'),
     subtipoArma: get(jobs.get(get(r, 'f3')) ?? {}, 'f12', 0), elemento: get(r, 'f9'), genero: get(r, 'f10', 0),
     id: r.f0, pasivas: [...(r.f36 ?? [])], activas: [...(r.f35 ?? [])], arbol: get(r, 'f16', 0),
+    // D98: texto de perfil (character.f6) para la pestaña Profile del estado del personaje.
+    descripcion: get(r, 'f6', ''),
     reclutamiento:await presentacionPersonajeGacha(fuente,r) };
   const levels = ordenar(await fuente.md('character_level'), (r) => r.f0);
   const expLevel = levels.map((r) => get(r, 'f2', 0));
@@ -141,6 +143,8 @@ export async function exportarApi(fuente, salida) {
   for (const r of await fuente.md('character_max_level_rarity')) maxLevel[r.f1] = r.f2;
   const items = {};
   for (const r of await fuente.md('item')) items[r.f0] = { nombre: get(r, 'f4'), tipo: get(r, 'f2') };
+  // D98: nombres de categoría del almacén (item_type.f1), para item_type_name.
+  const tiposObjeto = Object.fromEntries((await fuente.md('item_type') ?? []).map((r) => [r.f0, get(r, 'f1', '')]));
   const equipment = await catalogoEquipo(fuente);
 
   const quests = new Map();
@@ -197,7 +201,7 @@ export async function exportarApi(fuente, salida) {
   }
   const data = {
     _nota: 'Generado por web/js/datos/exportar_varios.js (exportarApi); campos PROVISIONALES en NOTAS.md (F3).',
-    personajes: characters, expNivel: expLevel, nivelMaximo: maxLevel, objetos: items, equipos: equipment,
+    personajes: characters, expNivel: expLevel, nivelMaximo: maxLevel, objetos: items, tiposObjeto, equipos: equipment,
     habilidades: await catalogoHabilidades(fuente),
     operaciones:await catalogoOperaciones(fuente),
     reclutamiento:await catalogoReclutamiento(fuente,characters),

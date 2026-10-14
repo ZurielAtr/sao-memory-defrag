@@ -72,6 +72,8 @@ export class EfectosArbol {
   clip(ruta){if(!this.clips.has(ruta))this.clips.set(ruta,clip(this.ssbp,ruta));return this.clips.get(ruta);}
   duracion(ruta){const c=this.clip(ruta);return c?c.animacion.numFrames/c.animacion.fps:0;}
   liberar(local,hijos){this.reloj.liberar(local,hijos);}
+  /** D97: hay una liberación en curso (el cliente bloquea los toques del tablero hasta terminarla). */
+  ocupado(){for(const n of this.reloj.nodos.values())if(n.unaVez)return true;return false;}
   actualizar(t){const dt=this.ultimo==null?0:Math.min(.1,Math.max(0,t-this.ultimo));this.ultimo=t;this.reloj.actualizar(dt,r=>this.duracion(r));}
   dibujar(ctx){
     const zonas=new Map(this.pantalla.zonas.map(z=>[z.n.nombre,z]));
