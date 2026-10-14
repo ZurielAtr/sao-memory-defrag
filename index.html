@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
 <title>SAO MD · Unofficial browser port</title>
 <style>
   :root { color-scheme: dark; --fondo: #070b14; --panel: #0e1626; --borde: #1f2d47; --texto: #d6e2f5; --suave: #8193b3;
@@ -18,6 +22,7 @@
   .aviso strong { color: #ffd98a; }
   p { margin: 6px 0; }
   .nota { color: var(--suave); font-size: 13px; }
+  @media not (pointer: coarse) { .solo-tactil { display: none; } }
   button, .boton { font: inherit; padding: 8px 16px; border-radius: 7px; border: 1px solid var(--borde); background: #15233d;
     color: var(--texto); cursor: pointer; text-decoration: none; display: inline-block; }
   button:hover, .boton:hover { border-color: var(--acento); }
@@ -73,6 +78,7 @@
     <p data-es="Elige el archivo &lt;code&gt;saomd8.apks&lt;/code&gt; (SAO MD Revival) o la APK del juego. El navegador lee la clave de su
       librería, descifra los recursos y genera los datos. Tarda unos minutos y ocupa unos 4 GB en el disco.">Choose your <code>saomd8.apks</code> file (SAO MD Revival) or the game APK. Your browser reads the key from the game library, decrypts the assets, and generates the game data. This takes a few minutes and uses about 4 GB of disk space.</p>
     <p class="nota" data-es="Recomendado: un ordenador con Chrome, Brave o Edge y unos 4 GB libres. El juego tiene controles táctiles, pero en el móvil (sobre todo iPhone/Safari) es experimental: deja la página abierta y la pantalla encendida mientras importa. Si se corta, pulsa «Importar» otra vez con el mismo archivo y seguirá donde se quedó.">Recommended: a computer with Chrome, Brave, or Edge and about 4 GB of free space. The game has touch controls, but phones (especially iPhone/Safari) are experimental: keep this page open and the screen on while importing. If it stops, press “Import” again with the same file and it will continue where it left off.</p>
+    <p class="nota solo-tactil" data-es="En el móvil el juego se pone en pantalla completa con el primer toque. En iPhone, Safari no lo permite: abre la página desde la pantalla de inicio (Compartir → «Añadir a pantalla de inicio»). Hazlo antes de importar: esa app guarda sus datos aparte de Safari y la APK se importa dentro de ella.">On phones the game goes fullscreen with the first tap. On iPhone, Safari does not allow it: open the page from the Home Screen (Share → “Add to Home Screen”). Do it before importing: that app keeps its data separate from Safari, so you import the APK inside it.</p>
     <p class="nota peligro" id="soporte"></p>
     <div class="fila">
       <button id="elegir-archivo" type="button" data-es="Seleccionar APK / APKS">Choose APK / APKS</button>

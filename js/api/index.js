@@ -25,3 +25,10 @@ export async function crearApiLocal({ masterUrl = 'data/api_master.json', cuenta
   }
   return new Api(new LocalBackend({ master, store, cuenta }));
 }
+
+/** Reroll: borra sólo la cuenta guardada en este navegador (personajes, objetos, progreso y diamantes).
+ * Los recursos importados (OPFS), los datos generados y los ajustes no se tocan; al volver a la
+ * interfaz se registra una cuenta nueva con el regalo inicial. */
+export async function borrarCuentaLocal({ cuenta = 'cuenta', storage = globalThis.localStorage } = {}) {
+  await new LocalStorageStore(storage).remove(cuenta);
+}

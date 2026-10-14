@@ -1,0 +1,10 @@
+{
+  "name": "SAO MD · Unofficial browser port",
+  "short_name": "SAO MD",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#080a0e",
+  "theme_color": "#080a0e"
+}

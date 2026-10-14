@@ -51,12 +51,28 @@ export class MotorAudio {
         this.ajustar({}, false);
       }
       if (this.pausas.has('oculto')) return false;
+      this._desbloquear();
       await this.ctx.resume();
       if (this.ctx.state !== 'running') return false;
       this._continuarMusica();
       this.alCambiar?.();
       return true;
     } catch (e) { this.diagnostico('activar', e); return false; }
+  }
+
+  // iPhone: la sesión «playback» suena aunque el interruptor de silencio esté puesto (con la
+  // predeterminada el audio web queda mudo), y un búfer vacío iniciado dentro del gesto termina de
+  // desbloquear la salida en versiones antiguas de Safari (se repite en cada intento: el primero
+  // puede llegar con pointerdown, que no cuenta como gesto). En otros navegadores no estorba.
+  _desbloquear() {
+    const sesion = globalThis.navigator?.audioSession;
+    if (sesion && sesion.type !== 'playback') try { sesion.type = 'playback'; } catch { /* no admitido */ }
+    if (!this.ctx.createBuffer) return;
+    try {
+      const s = this.ctx.createBufferSource();
+      s.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate || 44100);
+      s.connect(this.ctx.destination); s.start(0);
+    } catch { /* sólo es una ayuda */ }
   }
 
   diagnostico(clave, e) {

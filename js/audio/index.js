@@ -122,8 +122,9 @@ export const audio = {
 
 if (typeof window !== 'undefined') {
   const gesto = () => { if (motor.ctx?.state !== 'running') void audio.activar(); };
-  window.addEventListener('pointerdown', gesto, { capture: true });
-  window.addEventListener('keydown', gesto, { capture: true });
+  // Con el dedo, pointerdown no cuenta como gesto para el navegador (sí touchend/pointerup/click):
+  // en iPhone el audio no se activaba nunca. Se escuchan todos; activar() ignora los repetidos.
+  for (const tipo of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(tipo, gesto, { capture: true });
   document.addEventListener('visibilitychange', () => audio.pausar('oculto', document.hidden));
   window.addEventListener('pagehide', () => {
     motor.transitorios(); motor.pausar('oculto', true); vozAlActivar = null;
