@@ -122,13 +122,37 @@ export async function flujoEntrada(blob, e) {
 
 /** Contenido de una entrada entera (Uint8Array). */
 export async function bytesEntrada(blob, e) {
-  return new Uint8Array(await new Response(await flujoEntrada(blob, e)).arrayBuffer());
+  return juntar(await flujoEntrada(blob, e));
 }
 
 /** Descomprime deflate crudo (o zlib con formato = 'deflate'). */
+// D104: sin Blob ni Response. Chrome en Android reserva poco espacio para Blobs y una importación crea
+// decenas de miles; al llenarse, la lectura fallaba con un «Failed to fetch» que ocultaba el error real.
 export async function inflar(bytes, formato = 'deflate-raw') {
-  const flujo = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(formato));
-  return new Uint8Array(await new Response(flujo).arrayBuffer());
+  const ds = new DecompressionStream(formato);
+  const escritor = ds.writable.getWriter();
+  const escrito = escritor.write(bytes).then(() => escritor.close());
+  escrito.catch(() => { /* el mismo error llega por la lectura */ });
+  const salida = await juntar(ds.readable);
+  await escrito;
+  return salida;
+}
+
+/** Lee un ReadableStream entero en un Uint8Array, con su error original si falla. */
+export async function juntar(flujo) {
+  const r = flujo.getReader();
+  const trozos = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    trozos.push(value); total += value.length;
+  }
+  if (trozos.length === 1) return trozos[0];
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const t of trozos) { out.set(t, o); o += t.length; }
+  return out;
 }
 
 /** Lee un ReadableStream de bytes por cantidades exactas. */
