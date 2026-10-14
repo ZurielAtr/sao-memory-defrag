@@ -109,10 +109,28 @@ async function cargarCuenta() {
     await estado.api.request('user/register', { name: NOMBRE_INICIAL });
     estado.cuenta = (await estado.api.request('user/all')).data;
   }
+  restaurarEquipo();
   const progreso = (await estado.api.request('user/quest')).data;
   estado.quests = progreso.quests ?? [];
   estado.disponibles = clavesDisponibles(progreso.available);
   return estado.cuenta;
+}
+
+// Equipo guardado en la cuenta (user/party) por uid: sobrevive a recargar la página.
+function restaurarEquipo() {
+  const uids = estado.cuenta?.party;
+  if (!Array.isArray(uids)) return;
+  const indice = (uid) => { const i = personajes().findIndex((c) => c.uid === uid); return i < 0 ? null : i; };
+  const lider = indice(uids[0]);
+  if (lider != null) estado.personaje = lider;
+  estado.grupo = [1, 2].map((k) => (uids[k] == null ? null : indice(uids[k])));
+}
+function guardarEquipo() {
+  const uid = (i) => (i == null ? null : personajes()[i]?.uid ?? null);
+  const party = [uid(estado.personaje), ...estado.grupo.map(uid)];
+  if (!estado.api || party[0] == null) return;
+  estado.api.request('user/party', { party }).then((r) => { if (estado.cuenta) estado.cuenta.party = r.data.party; })
+    .catch((e) => console.warn('equipo: no se pudo guardar', e));
 }
 
 const master = () => estado.api?.backend?.master;
@@ -946,7 +964,7 @@ async function preparacion(m) {
   };
   await pintar();
   const n = Math.max(1, personajes().length);
-  const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; pintar(); };
+  const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; guardarEquipo(); pintar(); };
   if (consultaMision(m).historia) {
     p.texto('text_departures', 'Leer');
     p.texto('text_enemy', 'Historia'); p.texto('text_level', '');
@@ -1047,7 +1065,7 @@ async function equipo(m,volver=estado.volverEquipo) {
   await p.precargar(panel);
   if(ticket!==estado.aperturaPrincipal)return;
   const n = Math.max(1, personajes().length);
-  const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; equipo(m); };
+  const mover = (d) => () => { estado.personaje = (estado.personaje + d + n) % n; guardarEquipo(); equipo(m); };
   escena('equipo', [{ pantalla: p }, { pantalla: vuelta }], {
     // D98: ranura llena → estado del personaje (FUN_00b77c40); vacía → elegir personaje.
     ...Object.fromEntries([0, 1, 2].map((k) => [`hueco_${k}`, () => (miembroEn(k) ? estadoPersonaje(m, k) : listaPersonajes(m, k))])),
@@ -1206,6 +1224,9 @@ async function listaPersonajes(m, k = 0,{volver=null,seleccionar=true}={}) {
       else estado.grupo[k - 1] = estado.grupo[k - 1] === i ? null : i;
       // Un personaje va en un solo puesto.
       estado.grupo = estado.grupo.map((g, j) => (g === i && j !== k - 1 ? null : g));
+      // El líder tampoco puede repetirse en el Switch.
+      if (k === 0) estado.grupo = estado.grupo.map((g) => (g === i ? null : g));
+      guardarEquipo();
       equipo(m);
     };
   });

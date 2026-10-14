@@ -450,9 +450,31 @@ const RUTAS = {
             user: vistaUsuario(estado),
             ...vistaInventario(estado),
             quest_session: s ? { quest_id: s.quest_id, difficulty: s.difficulty } : null,
+            party: estado.party ?? null,
           },
         },
       };
+    },
+  },
+
+  // Equipo elegido (líder + dos puestos del Switch) por uid. En el original lo guarda el servidor; nombre y formato
+  // PROVISIONALES (no se encontró la ruta). Campo opcional de la cuenta: sin él, el primer personaje (schema5 sin cambios).
+  'user/party': {
+    cuenta: true,
+    fn(estado, { party }) {
+      if (!Array.isArray(party) || party.length < 1 || party.length > 3) fail('equipo_invalido', 'el equipo lleva de 1 a 3 puestos');
+      const propios = new Set(estado.characters.map((c) => c.uid));
+      const limpio = [];
+      for (const uid of party) {
+        if (uid == null) { limpio.push(null); continue; }
+        if (!propios.has(uid)) fail('equipo_invalido', `personaje ${uid} no está en la cuenta`);
+        if (limpio.includes(uid)) fail('equipo_invalido', `personaje ${uid} repetido`);
+        limpio.push(uid);
+      }
+      if (limpio[0] == null) fail('equipo_invalido', 'el primer puesto no puede estar vacío');
+      while (limpio.length < 3) limpio.push(null);
+      estado.party = limpio;
+      return { respuesta: { data: { party: limpio } }, nuevo: estado };
     },
   },
 

@@ -98,15 +98,18 @@ export class FondoBatalla {
     const cam = this.camara.actual;
     const atras = [], delante = [];
     if (!cam) return { atras, delante };
-    const par = this.camara.paralaje(cam), [fx, fy] = this.camara.g.campo, P = CAMPO.pixelesPorUnidad;
+    const par = this.camara.paralaje(cam), P = CAMPO.pixelesPorUnidad, [mx, my] = [CAMPO.pantalla[0] / 2, CAMPO.pantalla[1] / 2];
+    // Centro de la pantalla = punto de la cámara: mundo (cam.x/1.82, suelo + cam.y/1.82).
+    const cx = cam.x / P, cy = suelo + cam.y / P, k = cam.s * P;
     let lista = atras;
     for (const sp of this.sprites) {
       if (sp.campo) { lista = delante; continue; }
       const t = this.texturas.get(sp.ruta);
       if (!t) continue;
-      const [lx, ly] = posicionParalaje(sp, par, cam.s);
+      const [lx, ly] = posicionParalaje(sp, par, cam.s, this.camara.g.p240);
       const r = rectSprite(sp, t, lx, ly);
-      const q = imageQuad(t, (r.x - fx) / P, suelo + (r.y - fy) / P, r.w / P, r.h / P);
+      const [sx, sy] = this.camara.aPantalla(r.x, r.y, cam, par);
+      const q = imageQuad(t, cx + (sx - mx) / k, cy + (sy - my) / k, r.w / P, r.h / P);
       if (sp.volteo[0]) q.uvs = q.uvs.map(([u, v]) => [1 - u, v]);
       if (sp.volteo[1]) q.uvs = q.uvs.map(([u, v]) => [u, 1 - v]);
       lista.push(q);

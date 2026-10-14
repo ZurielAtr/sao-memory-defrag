@@ -44,9 +44,9 @@ export function limitarCamara(p, g) {
   if (c < mx) c = mx;
   else { const tope = s * g.ancho - mx; if (mx < tope && tope < c) c = tope; }
   p.x = (c - bx) / s;
-  // Vertical: P240.y = fy + profundidad (FUN_00818244 con la escala de pantalla 1). El borde superior del
-  // fondo (alto = f4) no baja de la parte superior de la pantalla; si no cabe, gana el límite inferior.
-  const by = g.p240 + s * fy;
+  // Vertical: FUN_00818244 sube P240 a D = fy + profundidad y baja todas las capas D (FUN_0081e7c4), así que el
+  // nodo del campo queda en fy − D. q = P240.y + s·(fy − D + y) ∈ [667, D + s·alto − 667]; si no cabe, gana el mínimo.
+  const by = g.p240 + s * (fy - g.p240);
   const q = by + s * p.y;
   let r = my;
   if (!(q < my)) { const tope = g.p240 + s * g.alto - my; r = q; if (tope < q) { r = tope; if (tope <= my) r = my; } }
@@ -100,10 +100,15 @@ export class CamaraCampo {
     return a;
   }
 
-  /** Posición del nodo de paralaje respecto de P240 (FUN_0081a00c). */
+  /** Posición del nodo de paralaje respecto de P240 (FUN_0081a00c), con el nodo del campo en (fx, fy − D). */
   paralaje(cam = this.actual) {
     const [mx, my] = [CAMPO.pantalla[0] / 2, CAMPO.pantalla[1] / 2], [fx, fy] = this.g.campo;
-    return [mx - cam.s * (fx + cam.x), my - (this.g.p240 + cam.s * (fy + cam.y))];
+    return [mx - cam.s * (fx + cam.x), my - (this.g.p240 + cam.s * (fy - this.g.p240 + cam.y))];
+  }
+
+  /** Punto local del nodo de paralaje (ya desplazado −D) → pantalla de diseño (y hacia arriba). */
+  aPantalla(lx, ly, cam = this.actual, par = this.paralaje(cam)) {
+    return [par[0] + cam.s * lx, this.g.p240 + par[1] + cam.s * ly];
   }
 }
 
@@ -169,7 +174,8 @@ export function rectSprite(sp, t, lx, ly) {
   return { x: lx - sp.ancla[0] * w, y: ly - sp.ancla[1] * h, w, h };
 }
 
-/** Posición del sprite en el nodo de paralaje (FUN_0081e5e0): offset + pos·(ratio − 1)/escala. */
-export function posicionParalaje(sp, par, s) {
-  return [sp.offset[0] + (par[0] * (sp.ratio[0] - 1)) / s, sp.offset[1] + (par[1] * (sp.ratio[1] - 1)) / s];
+/** Posición del sprite en el nodo de paralaje (FUN_0081e5e0): offset + pos·(ratio − 1)/escala. Las capas
+ *  están desplazadas −D en y (FUN_0081e7c4 en FUN_00818244; `desplazamiento` = D). */
+export function posicionParalaje(sp, par, s, desplazamiento = 0) {
+  return [sp.offset[0] + (par[0] * (sp.ratio[0] - 1)) / s, sp.offset[1] - desplazamiento + (par[1] * (sp.ratio[1] - 1)) / s];
 }
