@@ -204,7 +204,9 @@ async function importar(archivos = [...$('archivo').files], urls = null) {
       const seguir = await importacionPendiente().catch(() => null);
       // D102: si falla la lectura del archivo elegido, en el iPhone suele ayudar tenerlo en «En mi iPhone».
       const lectura = e.nombre === 'NotReadableError' || /I\/O read/i.test(e.message);
-      const consejo = lectura ? t(' El navegador no pudo leer el archivo: si está en iCloud Drive, cópialo a «En mi iPhone» (app Archivos) y elígelo desde ahí.', ' The browser could not read the file: if it is in iCloud Drive, copy it to “On My iPhone” (Files app) and choose it from there.') : '';
+      // D105: datos que no se pueden descomprimir tras una lectura completa: el archivo está dañado en esa zona.
+      const danado = e.nombre === 'ArchivoDanado';
+      const consejo = danado ? t(' El archivo elegido parece dañado en esa parte (por ejemplo, una descarga incompleta o defectuosa): vuelve a descargarlo o copiarlo y comprueba que pesa exactamente lo mismo que el original.', ' The chosen file seems damaged in that part (for example, an incomplete or faulty download): download or copy it again and check that its size matches the original exactly.') : lectura ? t(' El navegador no pudo leer el archivo: si está en iCloud Drive, cópialo a «En mi iPhone» (app Archivos) y elígelo desde ahí.', ' The browser could not read the file: if it is in iCloud Drive, copy it to “On My iPhone” (Files app) and choose it from there.') : '';
       error(() => t(`No se pudo importar${donde}: ${e.message}.${seguir ? ' Lo ya descifrado se ha guardado: pulsa «Importar» otra vez con el mismo archivo para continuar donde se quedó.' : ''} En el móvil, mantén la página abierta y la pantalla encendida mientras importa.`,
         `Import failed${donde}. Technical details: ${e.message}.${seguir ? ' The assets decrypted so far were kept: press “Import” again with the same file to continue where it stopped.' : ''} On a phone, keep this page open and the screen on while importing.`) + consejo);
     }

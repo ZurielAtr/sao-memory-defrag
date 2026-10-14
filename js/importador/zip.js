@@ -27,7 +27,11 @@ const lecturaTransitoria = (e) => ['NotReadableError', 'UnknownError'].includes(
 export async function trozo(blob, ini, fin, espera = (ms) => new Promise((r) => setTimeout(r, ms))) {
   for (let i = 0; ; i++) {
     try {
-      return new Uint8Array(await blob.slice(ini, fin).arrayBuffer());
+      const b = new Uint8Array(await blob.slice(ini, fin).arrayBuffer());
+      // D105: una lectura corta (menos bytes de los pedidos, sin error) se trata como fallo pasajero y se repite.
+      const esperado = Math.max(0, Math.min(fin, blob.size ?? fin) - ini);
+      if (b.length !== esperado) throw Object.assign(new Error(`lectura corta: ${b.length} de ${esperado} bytes en la posición ${ini}`), { name: 'NotReadableError' });
+      return b;
     } catch (e) {
       if (i >= REINTENTOS_LECTURA || !lecturaTransitoria(e)) throw e;
       await espera(500 * (i + 1));
@@ -236,7 +240,12 @@ export async function recorrerZip(flujo, alEntrar) {
       L.cancelar();
       return;
     }
-    if (accion) await accion(await L.leer(tamComp));
+    if (accion) {
+      const datos = await L.leer(tamComp);
+      // D105: el flujo terminó antes de tiempo (antes acababa como «Compressed input was truncated»).
+      if (datos.length < tamComp) throw new Error(`el paquete se acaba a mitad de ${nombre} (${datos.length} de ${tamComp} bytes)`);
+      await accion(datos);
+    }
     else await L.saltar(tamComp);
     if (flags & 8) {
       // Descriptor de datos: [firma] crc, tamaños (4 + 4, u 8 + 8 en ZIP64).

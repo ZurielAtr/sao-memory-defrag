@@ -120,7 +120,15 @@ export async function importar({ archivos, destino, avance = () => {}, saltar = 
         return null; // recorrerZip la salta sin acumularla
       }
       return async (comp) => {
-        await guardar(reg.ruta, await contenido(e, comp));
+        let datos;
+        try {
+          datos = await contenido(e, comp);
+        } catch (err) {
+          // D105: datos comprimidos que no se pueden descomprimir. Si la lectura fue completa, el archivo elegido
+          // está dañado en esa zona (p. ej. una descarga defectuosa). Se dice cuál para poder comprobarlo.
+          throw Object.assign(new Error(`datos dañados en ${e.nombre} (${p.apk.nombre}): ${err.message}`), { name: 'ArchivoDanado' });
+        }
+        await guardar(reg.ruta, datos);
         if (escritas.size % 50 === 0) informar(e.nombre);
       };
     });
