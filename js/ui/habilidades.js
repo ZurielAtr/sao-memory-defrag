@@ -21,6 +21,17 @@ function ajustarTexto(p, nombre, valor, ancho, tam, desde = p.raiz) {
   const n = p.buscar(nombre, desde); if (n) Object.assign(n, { texto: String(valor), tamPropio: true, ancho, tamFuente: tam });
 }
 
+/**
+ * D100: FUN_005c79d0 oculta bg_color y pone en la capa una copia a escala 2 (0x40000000), centrada en la
+ * vista del tablero, debajo de todo (zOrder −1). PROVISIONAL: el tamaño exacto de la copia (vista más +0x278)
+ * no se reconstruye; se conserva el de la imagen original.
+ */
+export function fondoArbol(p) {
+  const bg = p.buscar('bg_color'); if (!bg) return null;
+  Object.assign(bg, { anclaX: .5, anclaY: .5, x: 375, y: 160 + 768 / 2, escalaX: 2, escalaY: 2, zOrder: -1 });
+  return bg;
+}
+
 /** FUN_005c79d0: filas alternas, 144 unidades verticales, 288 horizontales. */
 // D97: FUN_005c79d0 pone el tablero en un ScrollView 2D con zoom (FUN_00d55664) limitado entre el
 // encuadre completo (mínimo, 0x2b4) y 1.0 (máximo, 0x2b8); empieza en 928/720, que queda en 1.0.
@@ -241,6 +252,8 @@ export async function crearPantallaHabilidades(o) {
   if (modo === 'arbol') {
     const [modelo, status] = await Promise.all([Pantalla.cargar('ui/ability_board/ability_board_node_s.csb'), Pantalla.cargar('ui/ability_board/ability_board_status_s.csb')]);
     const nodos = nodosDelPersonaje(pj, cat), consultas = new Map(nodos.map(n => [n.local, consultarNodo(pj, c, cat, cuenta, n.local)]));
+    fondoArbol(p);
+    p._tiposArbol = new Map(nodos.map(n => [n.local, n.tipo]));
     Object.assign(acciones, componerTablero(p, modelo, nodos, consultas, seleccionado, abrir, { clave: c.uid ?? pj.id }));
     p.buscar('status_node').hijos = [status.raiz];
     ajustarTexto(status, 'text_character_name', pj.nombre.replace(/^\[[^\]]*\]\s*/, ''), 600, 27);
@@ -252,6 +265,7 @@ export async function crearPantallaHabilidades(o) {
     }
     status.mostrar('image_swipe', false); status.mostrar('button_release_all', false);
     const habilidades = estadoHabilidades(pj, c, cat);
+    p._skillsArbol = [0, 1, 2].map(i => habilidades.activas[i]?.nivel ?? 0); // D100: para la animación de aprendizaje
     for (let i = 1; i <= 3; i++) {
       const a = habilidades.activas[i-1], b = habilidades.pasivas[i-1];
       ajustarTexto(status, `text_active_skill_${i}`, a?.nivel ? cat.activas?.[a.id]?.name ?? `Skill ${a.id}` : 'Sin adquirir', 255, 23);

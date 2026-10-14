@@ -47,7 +47,7 @@ import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
 import {cargarPresentacionReclutamiento,controlesResultado} from './reclutamiento_animacion.js';
 import {movimientoReducido} from './animaciones.js';
 import {PopupAnimado} from './popup_menu.js';
-import {cargarEfectosArbol} from './efectos_arbol.js';
+import {cargarEfectosArbol, liberacionNodo, subidasEstado, cambiosSkills} from './efectos_arbol.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -1089,7 +1089,8 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
           direction: consulta.direccion, choose_master_item_id: consulta.material,use_hacking_crystals:e?.cristales===true }
           : { character_uid: c.uid, slot: n, expected_level: consulta.nivel, choose_master_item_id: e };
         await estado.api.request(modo === 'arbol' ? 'character/ability-board' : 'character/slot-skill', params);
-        if (modo === 'arbol') estado.arbolLiberar = { uid: c.uid, local: n };
+        // D100: tipo del nodo, estadísticas y skills de antes para las animaciones del panel de estado.
+        if (modo === 'arbol') estado.arbolLiberar = { uid: c.uid, local: n, tipo: pantalla._tiposArbol?.get(n), stats: { ...stats }, skills: pantalla._skillsArbol ?? [] };
         if (ticket !== estado.aperturaPrincipal) return;
         // D95: en el Árbol se vuelve al tablero para ver la liberación (AbilityBoardEvent: el cliente
         // cierra la confirmación y anima el nodo); las Ranuras conservan su panel con el aviso.
@@ -1105,10 +1106,23 @@ async function habilidades(m, k = 0, modo = 'arbol', seleccionado = null, elegid
     if (ticket !== estado.aperturaPrincipal) return;
     const previo = estado.arbolPrevio, liberar = estado.arbolLiberar;
     const disponibles = new Set(pantalla._nodosArbol.filter((x) => x.disponible).map((x) => x.local));
-    if (efectos && liberar?.uid === c.uid && previo?.uid === c.uid)
-      efectos.liberar(liberar.local, [...disponibles].filter((x) => !previo.disponibles.has(x) && x !== liberar.local));
+    if (efectos && liberar?.uid === c.uid && previo?.uid === c.uid) {
+      // D100: el panel muestra los valores de antes hasta que termina la liberación; entonces cuentan hasta
+      // los nuevos (FUN_007f77d8) y las skills aprendidas se animan (FUN_007f9044) en la página de skills.
+      const cambio = { antes: liberar.stats, despues: stats, skillsAntes: liberar.skills, skillsDespues: pantalla._skillsArbol };
+      for (const s of subidasEstado(cambio.antes, cambio.despues)) { const t = pantalla.buscar(`text_${s.estado}_number`); if (t) t.texto = String(s.desde); }
+      efectos.liberar(liberar.local, [...disponibles].filter((x) => !previo.disponibles.has(x) && x !== liberar.local), {
+        ruta: liberacionNodo(liberar.tipo),
+        alTerminar: () => {
+          const vista = pantalla.buscar('page_view');
+          if (vista && cambiosSkills(cambio.skillsAntes, cambio.skillsDespues).length) vista._pagina = 1; // PROVISIONAL
+          efectos.animarEstado(pantalla, cambio);
+        },
+      });
+    }
     estado.arbolLiberar = null; estado.arbolPrevio = { uid: c.uid, disponibles };
     if (efectos) pantalla._tableroArbol.alDibujar = (ctx) => efectos.dibujar(ctx);
+    pantalla._efectosArbol = efectos; // para depurar
     // D97: durante la liberación no se aceptan toques en los nodos (AbilityBoardEvent).
     if (efectos) for (const k of Object.keys(acciones)) if (k.startsWith('nodo_')) { const f = acciones[k]; acciones[k] = (n) => efectos.ocupado() ? undefined : f(n); }
   }
