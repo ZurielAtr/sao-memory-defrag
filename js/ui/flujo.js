@@ -35,7 +35,8 @@ import { crearCategoriasEquipo, componerListaEquipo } from './inventario_equipo.
 import { existe } from './recursos.js';
 import { sumarStatsArbol } from '../habilidades.js';
 import { clavesDisponibles, estadoMision, estadoCapitulo } from './disponibilidad_misiones.js';
-import {DESTINOS_FOOTER,PENDIENTES_MENU,crearMenuPrincipal,crearCiudadTown,crearAvisoPrincipal,objetivosMenu} from './menus_principales.js';
+import {DESTINOS_FOOTER,PENDIENTES_MENU,crearMenuPrincipal,crearCiudadTown,crearVentanaMenu,crearAvisoPrincipal,objetivosMenu,moverCamaraCiudad} from './menus_principales.js';
+import {AvatarTown,cargarAvatarTown,cargarSombraTown} from './town_avatar.js';
 import {consultarOperacion,TITULOS_EQUIPO,equipado} from '../operaciones_equipo.js';
 import {crearPantallaOperacion,crearConfirmacionOperacion} from './operaciones.js';
 import {consultarReclutamiento,probabilidadesBanner} from '../reclutamiento.js';
@@ -156,6 +157,8 @@ async function fondo(ruta) {
 }
 
 function escena(nombre, capas, acciones = {}, { alTocarFondo = null, cada = null, largas = {},teclado=['home','town','taberna','upgrade','multi','aviso-principal'].includes(nombre) } = {}) {
+  // D96: MENU existe en todo pie; si la escena no lo define, abre la ventana MENU sobre ella.
+  if(capas.some(c=>c.pantalla?._pieComun)&&!('button_footer_menu' in acciones))acciones={...acciones,button_footer_menu:()=>abrirMenu()};
   Object.assign(estado, { pantalla: nombre, capas, acciones, alTocarFondo, cada, largas,teclado,foco:null });
   for (const c of capas) iniciarPie(c.pantalla);
   canvas.tabIndex=0;canvas.setAttribute('aria-label',`SAO MD · ${nombre}`);
@@ -266,7 +269,7 @@ canvas.addEventListener('pointerup', () => {
   if (t.n) {
     void audio.contexto(/cancel|return|cerrar|close/.test(t.n.nombre) ? 'cancelar' : /confirm|start|next/.test(t.n.nombre) ? 'confirmar' : 'seleccionar');
     estado.acciones[t.n.nombre]?.(t.n);
-  } else estado.alTocarFondo?.();
+  } else estado.alTocarFondo?.(t.x, t.y);
 });
 canvas.addEventListener('wheel', (ev) => {
   const [x, y] = punto(ev);
@@ -291,9 +294,10 @@ addEventListener('keydown', (ev) => {
 });
 
 // Pie común: conserva el ancla reflejada del CSB y la altura recuperada del código Android.
-async function pie({ menu = false, volver = true } = {}) {
+async function pie({ menu = false, volver = true, chat = false } = {}) {
   const p = await Pantalla.cargar('ui/common/common_footer_menu_s.csb');
-  configurarPie(p, { menu, volver });
+  configurarPie(p, { menu, volver, chat });
+  p._pieComun = true; // D96: su botón MENU abre la ventana MENU en cualquier escena (ver escena())
   const anterior = estado.pieMenu;estado.pieMenu = menu;
   animarPie(p, anterior, menu);
   return p;
@@ -311,9 +315,13 @@ async function titulo() {
   });
 }
 
+// D96: tras Start, la pila de escenas vacía devuelve la escena 4 = TownScene (FUN_0088c5a4,
+// FUN_008b09b8). No hay escena «Home»: la ciudad con la cabecera (HomeUserStatusUI), el pie con
+// sus seis accesos, el chat y MENU es Town. El avatar propio camina por ella (docs/town-avatar-d96.md).
 async function home() {
   const ticket=++estado.aperturaPrincipal;estado.volverEquipo=null;
-  const [ciudad, barra, p] = await Promise.all([crearCiudadTown({town:master()?.data.town}), Pantalla.cargar('ui/common/common_home_user_status_s.csb'), pie({ menu: true, volver: false })]);
+  const town=master()?.data.town;
+  const [ciudad, barra, p] = await Promise.all([crearCiudadTown({town,recorrido:[0,town?.fondo?.datos?.f2??2500]}), Pantalla.cargar('ui/common/common_home_user_status_s.csb'), pie({ menu: true, chat: true })]);
   const bg=ciudad?{pantalla:ciudad}:await fondo(FONDO_HOME);
   const u = estado.cuenta?.user ?? {};
   barra.texto('text_user_name', u.name ?? '');
@@ -323,21 +331,41 @@ async function home() {
   if (gauge) gauge.porcentaje = 0;
   await barra.precargar();
   if(ticket!==estado.aperturaPrincipal)return;
-  escena('home', [bg, { pantalla: barra }, { pantalla: p }], {
+  const alTocarFondo=ciudad?.ciudadTown?avatarTown(ciudad.ciudadTown):null;
+  escena('town', [bg, { pantalla: barra }, { pantalla: p }], {
     ...accionesHome(),
-  });
+    button_home_town:()=>{}, // ya estamos en Town
+    button_footer_talk:()=>avisoPrincipal(...PENDIENTES_MENU.button_footer_talk),
+  },{alTocarFondo});
+}
+
+/** D96: ventana MENU (MenuWindowUI) sobre la escena actual, con el pie encima. */
+async function abrirMenu(){
+  const ticket=++estado.aperturaPrincipal;
+  const anterior={pantalla:estado.pantalla,capas:estado.capas,acciones:estado.acciones,alTocarFondo:estado.alTocarFondo,cada:estado.cada,teclado:estado.teclado};
+  const ventana=await crearVentanaMenu();
+  if(ticket!==estado.aperturaPrincipal)return;
+  const pieCapa=anterior.capas.find(c=>c.pantalla?._pieComun);
+  const mensajes={announce:'Los avisos del servicio original todavía no están disponibles.',notification:'No hay notificaciones del servicio original en esta partida local.',item:'El almacén de objetos todavía está pendiente. Los materiales guardados se muestran al adquirir mejoras.',gift_box:'La bandeja de regalos todavía está pendiente.',exchangeshop:'La tienda de intercambio de este menú todavía está pendiente.',mission:'Las tareas y recompensas de este menú todavía están pendientes.',status:'El estado de usuario completo todavía está pendiente.',others:'Las opciones originales de este submenú todavía están pendientes.',guild:'Los gremios todavía están pendientes.',friend:'La lista de amigos todavía está pendiente.'};
+  const delMenu={};
+  for(const d of ventana.destinosMenuOriginal??[])delMenu[d.boton]=()=>avisoPrincipal(d.titulo,mensajes[d.tipo]);
+  const volver=()=>escena(anterior.pantalla,anterior.capas,anterior.acciones,{alTocarFondo:anterior.alTocarFondo,cada:anterior.cada,teclado:anterior.teclado});
+  popupMenu('menu',anterior.capas.filter(c=>c!==pieCapa),ventana,delMenu,{cerrar:['button_footer_menu','button_footer_return','button_footer_talk'],
+    alCerrar:volver,encima:pieCapa?[pieCapa]:[]});
 }
 
 function accionesHome(){
+  // D96: el acceso Town del pie vuelve a la ciudad (TownScene), no a una pantalla aparte.
   return {button_home_quest:()=>mundo(),button_home_party:()=>equipo(null,null),button_diamond_shop:()=>avisoPrincipal(...PENDIENTES_MENU.diamonds),
-    ...Object.fromEntries(Object.entries(DESTINOS_FOOTER).map(([boton,nombre])=>[boton,()=>menuPrincipal(nombre)]))};
+    ...Object.fromEntries(Object.entries(DESTINOS_FOOTER).map(([boton,nombre])=>[boton,()=>menuPrincipal(nombre)])),
+    button_home_town:()=>home()};
 }
 
 async function avisoPrincipal(titulo,mensaje){
   estado.aperturaPrincipal++;
-  const anterior={pantalla:estado.pantalla,capas:estado.capas,acciones:estado.acciones,cada:estado.cada,foco:estado.foco,teclado:estado.teclado};
+  const anterior={pantalla:estado.pantalla,capas:estado.capas,acciones:estado.acciones,cada:estado.cada,foco:estado.foco,teclado:estado.teclado,alTocarFondo:estado.alTocarFondo};
   const p=await crearAvisoPrincipal(titulo,mensaje);
-  const volver=()=>{escena(anterior.pantalla,anterior.capas,anterior.acciones,{cada:anterior.cada,teclado:anterior.teclado});estado.foco=anterior.foco;};
+  const volver=()=>{escena(anterior.pantalla,anterior.capas,anterior.acciones,{cada:anterior.cada,teclado:anterior.teclado,alTocarFondo:anterior.alTocarFondo});estado.foco=anterior.foco;};
   popupMenu('aviso-principal',anterior.capas,p,{},{cerrar:['button_close','button_footer_return'],alCerrar:volver,alfaVelo:.8});
 }
 
@@ -345,24 +373,10 @@ async function menuPrincipal(nombre,categoria='all',indice=0){
   const ticket=++estado.aperturaPrincipal;
   await cargarCuenta();
   const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,indice,banners:master().reclutamiento().banners,town:master().data.town}),pie()]);
-  if(nombre==='town')vuelta.mostrar('button_footer_menu',true);
   if(ticket!==estado.aperturaPrincipal)return;
   const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria,indice));
   const pendiente=k=>()=>avisoPrincipal(...PENDIENTES_MENU[k]);
   const acciones={button_footer_return:()=>home()};
-  // D95: MENU es MenuWindowUI (BaseCommonPopupUI): velo y apertura/cierre animados; el pie queda encima.
-  if(nombre==='town')acciones.button_footer_menu=()=>{
-   const menu=p.buscar('menu_town');if(!p.townOriginal){p.mostrar('menu_town',!menu.visible);return;}
-   const anterior={capas:estado.capas,acciones:estado.acciones},ventana=new Pantalla({raiz:{...menu,visible:true}},p.ruta);
-   const delMenu={button_footer_return:()=>home()};
-   for(const d of p.destinosMenuOriginal??[])delMenu[d.boton]=acciones[d.boton];
-   popupMenu('menu-town',anterior.capas.filter(c=>c.pantalla!==vuelta),ventana,delMenu,{cerrar:['button_footer_menu'],
-    alCerrar:()=>escena('town',anterior.capas,anterior.acciones),encima:[{pantalla:vuelta}]});
-  };
-  if(nombre==='town')for(const d of p.destinosMenuOriginal??[]){
-    const mensajes={announce:'Los avisos del servicio original todavía no están disponibles.',notification:'No hay notificaciones del servicio original en esta partida local.',item:'El almacén de objetos todavía está pendiente. Los materiales guardados se muestran al adquirir mejoras.',gift_box:'La bandeja de regalos todavía está pendiente.',exchangeshop:'La tienda de intercambio de este menú todavía está pendiente.',mission:'Las tareas y recompensas de este menú todavía están pendientes.',status:'El estado de usuario completo todavía está pendiente.',others:'Las opciones originales de este submenú todavía están pendientes.',guild:'Los gremios todavía están pendientes.',friend:'La lista de amigos todavía está pendiente.'};
-    acciones[d.boton]=()=>avisoPrincipal(d.titulo,mensajes[d.tipo]);
-  }
   if(nombre==='taberna'){
     acciones.diamonds=pendiente('diamonds');
     for(const k of ['all','chara','weapon'])acciones['button_category_'+k]=()=>menuPrincipal('taberna',k);
@@ -388,9 +402,24 @@ async function menuPrincipal(nombre,categoria='all',indice=0){
     acciones.button_party_edit=abrirEquipo;acciones.multi_solo=()=>mundo();
     for(const k of ['button_party_search','button_friend_search','button_numbersearch','button_matching'])acciones[k]=pendiente(k);
   }
-  const bg=await fondo(nombre==='town'?FONDO_HOME:FONDO_MENU);
+  const bg=await fondo(FONDO_MENU);
   if(ticket!==estado.aperturaPrincipal)return;
   escena(nombre,[bg,{pantalla:p},{pantalla:vuelta}],acciones);
+}
+
+// D96: avatar propio en Town (sin jugadores simulados): entra en un punto al azar, camina al tocar el
+// suelo y la cámara lo sigue. Usa la unidad y el traje del líder del equipo. Ver docs/town-avatar-d96.md.
+function avatarTown(ciudad){
+  const lider=personajeActual();
+  const avatar=new AvatarTown(ciudad,{moverCamara:moverCamaraCiudad});
+  void cargarSombraTown().then(img=>avatar.ponerSombra(img)).catch(()=>{});
+  if(lider)void fichaPersonaje(lider.character_id).then(async ficha=>{
+    if(!ficha?.unidad)return;
+    avatar.mov.velocidad*=ficha.velocidad||1;
+    avatar.ponerPersonaje(await cargarAvatarTown(ficha));
+  }).catch(e=>console.warn('town: no se pudo cargar el avatar',e));
+  // El pie tapa el borde inferior (198 de diseño, D95): un toque ahí no mueve al avatar.
+  return (x,y)=>{const b=baseCanvas(canvas);if((y-b[5])/b[3]<198)return;avatar.tocar(x,y);};
 }
 
 async function operacionEquipo(modo,o={pagina:0,fase:modo==='exchange'?'destinos':'base',uids:[],uid:null,nivel:null,destino:null,mensaje:''}){

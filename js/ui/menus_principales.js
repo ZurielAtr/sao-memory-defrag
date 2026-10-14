@@ -21,6 +21,7 @@ export const PENDIENTES_MENU=Object.freeze({
  training:['Entrenamiento','El entrenamiento de personajes todavía está pendiente. Puedes usar el árbol y las ranuras desde Equipo o Upgrade.'],
  diamonds:['Diamantes','La compra de diamantes no está disponible. Tu saldo guardado se conserva.'],
  weaponshop:['Tienda de armas','Las ofertas y compras de esta tienda todavía están pendientes. Puedes gestionar las piezas que ya tienes desde Equipo.'],
+ button_footer_talk:['Chat','El chat de la ciudad necesita el servidor online. En esta partida local no hay otros jugadores conectados.'],
  button_party_search:['Buscar grupo','Buscar jugadores y grupos necesita un servidor de multijugador. Puedes preparar tu equipo local y jugar misiones en solitario.'],
  button_friend_search:['Buscar amigos','La lista de amigos y sus invitaciones necesitan un servidor. No hay jugadores remotos conectados a esta partida local.'],
  button_numbersearch:['Buscar sala','No hay salas online ni números de sala disponibles sin servidor.'],
@@ -32,9 +33,8 @@ const base={visible:true,alpha:255,x:0,y:0,ancho:0,alto:0,anclaX:.5,anclaY:.5,es
 export const textoMenu=(nombre,texto,x,y,{ancho=670,alto=120,tam=28}={})=>({...base,clase:'Text',nombre,texto,x,y,ancho,alto,
  fuente:'fonts/SAOFont-Regular_v1.ttf',tamFuente:tam,tamPropio:true,alineH:1,alineV:1,hijos:[],
  contorno:{color:{r:0,g:0,b:0},tam:1}});
-export function componerTown(p,plantilla,town=null,tamanos={}){
- // TownLayer no tiene un CSB raíz. La ciudad se compone con background.f8;
- // MENU es su pantalla propia: estos destinos no son los objetos de la ciudad.
+/** MENU (MenuWindowUI): diez destinos originales sobre common_menu_other_s. */
+export function componerVentanaMenu(p,plantilla){
  const menu=p.raiz;menu.nombre='menu_town';
  for(const d of DESTINOS_MENU_ORIGINAL){
   const slot=p.buscar(d.nodo),boton=clonar(plantilla.buscar('button'));
@@ -43,39 +43,79 @@ export function componerTown(p,plantilla,town=null,tamanos={}){
   plantilla.mostrar('node_badge',false,boton);slot.hijos=[boton];
  }
  p.destinosMenuOriginal=DESTINOS_MENU_ORIGINAL;
- const ciudad=componerCiudadTown(town,tamanos);
+ return menu;
+}
+
+/** D96: ventana MENU independiente; el botón del pie existe en todas las escenas (FUN_009d2e90 sin llamadores). */
+export async function crearVentanaMenu(){
+ const [p,w]=await Promise.all([Pantalla.cargar('ui/common/common_menu_other_s.csb'),Pantalla.cargar('ui/common/common_menu_widget.csb')]);
+ componerVentanaMenu(p,w);p.raiz.visible=true;
+ await p.precargar();return p;
+}
+
+export function componerTown(p,plantilla,town=null,tamanos={}){
+ // TownLayer no tiene un CSB raíz. La ciudad se compone con background.f8;
+ // MENU es su pantalla propia: estos destinos no son los objetos de la ciudad.
+ const menu=componerVentanaMenu(p,plantilla);
+ // D96: la cámara sigue al avatar por todo el fondo; los mosaicos cubren todo el recorrido.
+ const ciudad=componerCiudadTown(town,tamanos,{recorrido:[0,town?.fondo?.datos?.f2??2500]});
  if(!ciudad){p.townOriginal=false;return p;}
  menu.visible=false;menu.zOrder=50;
  p.raiz={...base,clase:'Node',nombre:'town',ancho:750,alto:1334,anclaX:0,anclaY:0,hijos:[ciudad,menu]};
- p.townOriginal=true;p.puntosTown=town.patrones;
+ p.townOriginal=true;p.puntosTown=town.patrones;p.ciudadTown=ciudad;
  return p;
 }
 
-/** Capas de la ciudad, compartidas por Town y Home; sin panel ni retrato añadido. */
-export function componerCiudadTown(town,tamanos={}){
+/** Capas de la ciudad, compartidas por Town y Home; sin panel ni retrato añadido.
+ * `recorrido` = [mín, máx] de centros de cámara: genera los mosaicos repetidos para todo el
+ * recorrido (D96, Town con cámara que sigue al avatar). Sin él, la vista queda fija en `camara`. */
+export function componerCiudadTown(town,tamanos={},{camara=1000,recorrido=null}={}){
  if(!town?.fondo?.datos?.f8)return null;
  const bg=town.fondo.datos,escala=Math.max(bg.f6??.5,Math.min(bg.f7??1,bg.f5??.8));
- // Vista inicial local fija: Android sigue al actor y elige un punto aleatorio
- // de entrada. No atribuir esta cámara fija (x=1000) al cliente original.
- const camara=1000,tx=375-camara*escala;
- const ciudad={...base,clase:'Node',nombre:'ciudad_town',anclaX:0,anclaY:0,x:tx,escalaX:escala,escalaY:escala,zOrder:0,hijos:[]};
+ // Home: vista inicial local fija (x=1000), no atribuida al cliente original. Town (D96) la mueve
+ // con moverCamaraCiudad siguiendo al avatar, como el fondo nativo con su miembro objetivo.
+ const tx=375-camara*escala;
+ const [c0,c1]=recorrido??[camara,camara],extremos=[375-c0*escala,375-c1*escala];
+ const ciudad={...base,clase:'Node',nombre:'ciudad_town',anclaX:0,anclaY:0,x:tx,escalaX:escala,escalaY:escala,zOrder:0,hijos:[],
+  _escala:escala,_ancho:bg.f2??2500,_profundidad:bg.f3??0};
  for(const l of bg.f8){
+  // Capa sin imagen (f3=1): el suelo (Ground) donde están los personajes, entre las capas por zOrder.
+  if(l.f3===1&&!l.f2){ciudad._suelo={x:l.f7??0,y:l.f8??0,zOrder:l.f4??0,paralaje:l.f9??1};continue;}
   if(l.f3!==2||!l.f2)continue;
   const ruta=`images/background/${l.f16}/${l.f2}`,tam=tamanos[ruta];
   if(!tam?.width||!tam?.height)continue;
   const sx=l.f13??1,sy=l.f14??1,ancho=tam.width,alto=tam.height;
-  const origenX=l.f7??0,origenY=l.f8??0;
+  const origenX=l.f7??0,origenY=l.f8??0,f9=l.f9??1;
   // Native 008185cc: anclas f5/f6, escala f13/f14 y zOrder f4.
   // 0081e5e0: posición de paralaje respecto al desplazamiento de la raíz.
-  const x=origenX+(tx/escala)*((l.f9??1)-1),y=origenY;
+  const xEn=t=>origenX+(t/escala)*(f9-1),y=origenY;
   const repite=l.f11===3,periodo=Math.abs(ancho*sx)||1;
-  const inicio=repite?Math.floor(((-tx/escala)-x)/periodo)-1:0;
-  const fin=repite?Math.ceil(((750-tx)/escala-x)/periodo)+1:0;
+  const inicio=repite?Math.min(...extremos.map(t=>Math.floor(((-t/escala)-xEn(t))/periodo)))-1:0;
+  const fin=repite?Math.max(...extremos.map(t=>Math.ceil(((750-t)/escala-xEn(t))/periodo)))+1:0;
   for(let k=inicio;k<=fin;k++)ciudad.hijos.push({...base,clase:'Sprite',nombre:`town_capa_${l.f1}_${k}`,
-   imagen:{path:ruta,plist:null,tipo:0},ancho,alto,x:x+k*periodo,y,anclaX:l.f5??0,anclaY:l.f6??0,
-   escalaX:sx,escalaY:sy,zOrder:l.f4??0,hijos:[],_capaNativa:l.f1});
+   imagen:{path:ruta,plist:null,tipo:0},ancho,alto,x:xEn(tx)+k*periodo,y,anclaX:l.f5??0,anclaY:l.f6??0,
+   escalaX:sx,escalaY:sy,zOrder:l.f4??0,hijos:[],_capaNativa:l.f1,_paralaje:{origenX,f9,desplazamiento:k*periodo},
+   // f17 < 1: opacidad mínima cuando el jugador queda detrás (FUN_0081cd48, D96).
+   ...(l.f17!=null&&l.f17<1?{_transparencia:l.f17}:{})});
  }
  return ciudad;
+}
+
+/** Límites del centro de cámara (unidades de la ciudad) para no mostrar fuera del fondo. */
+export function limitesCamara(ciudad){
+ const medio=375/ciudad._escala;
+ return [Math.min(medio,ciudad._ancho/2),Math.max(ciudad._ancho-medio,ciudad._ancho/2)];
+}
+
+/** Centra la ciudad en `camara` (limitada al fondo) y recoloca las capas con su paralaje. */
+export function moverCamaraCiudad(ciudad,camara){
+ const [a,b]=limitesCamara(ciudad),c=Math.min(b,Math.max(a,camara)),e=ciudad._escala,tx=375-c*e;
+ ciudad.x=tx;
+ for(const h of ciudad.hijos){
+  const p=h._paralaje;if(p)h.x=p.origenX+(tx/e)*(p.f9-1)+p.desplazamiento;
+  else if(h._sueloTown)h.x=(ciudad._suelo?.x??0)+(tx/e)*((ciudad._suelo?.paralaje??1)-1);
+ }
+ return c;
 }
 
 async function tamanosCiudad(town){
@@ -85,10 +125,11 @@ async function tamanosCiudad(town){
  return tamanos;
 }
 
-export async function crearCiudadTown({town}={}){
- const ciudad=componerCiudadTown(town,await tamanosCiudad(town));
+export async function crearCiudadTown({town,recorrido=null}={}){
+ const ciudad=componerCiudadTown(town,await tamanosCiudad(town),{recorrido});
  if(!ciudad)return null;
  const p=new Pantalla({raiz:{...base,clase:'Node',nombre:'ciudad_home',anclaX:0,anclaY:0,ancho:750,alto:1334,hijos:[ciudad]}});
+ p.ciudadTown=ciudad;
  await p.precargar();return p;
 }
 

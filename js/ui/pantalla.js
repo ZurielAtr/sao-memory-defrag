@@ -205,6 +205,8 @@ export class Pantalla {
 
   dibujarNodo(ctx, n, padre, alfaPadre, recortes = []) {
     if (!n.visible) return;
+    // D96: actualización previa al dibujo (cámara y avatar de Town mueven nodos antes de calcular matrices).
+    n.antesDeDibujar?.(this);
     const [w, h] = this.tamano(n);
     const m = mul(padre, matrizLocal(n, w, h));
     const alfa = alfaPadre * (n.alpha / 255);
@@ -237,7 +239,7 @@ export class Pantalla {
     const alfaHijos=n.cascadaAlpha===false?alfaPadre:alfa;
     for (const hijo of hijos) this.dibujarNodo(ctx, hijo, mh, alfaHijos, recortesHijos);
     // D95: dibujo adicional tras los hijos y dentro del recorte del nodo (efectos SpriteStudio del Árbol).
-    if (n.alDibujar) { ctx.save(); try { n.alDibujar(ctx, this); } finally { ctx.restore(); } }
+    if (n.alDibujar) { ctx.save(); try { n.alDibujar(ctx, this, m); } finally { ctx.restore(); } }
     if (recorta) ctx.restore();
   }
 
