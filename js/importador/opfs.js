@@ -69,11 +69,33 @@ export async function carpeta(ruta = '', crear = false) {
   return d;
 }
 
+// D101: Safari (iPhone) corta a veces la conexión con su almacenamiento («Connection is lost», UnknownError
+// «…unknown transient reason (e.g. out of memory)»). Esos errores se reintentan volviendo a abrir la carpeta.
+export const REINTENTOS_OPFS = 4;
+export const esTransitorio = (e) => ['UnknownError', 'InvalidStateError', 'NotReadableError'].includes(e?.name)
+  || /connection is lost|transient/i.test(e?.message ?? '');
+
 /** Escribe archivos en una carpeta de OPFS, guardando los manejadores de las subcarpetas. */
 export class Escritor {
-  constructor(base) {
+  /** `abrir` (opcional) vuelve a conseguir la carpeta base tras un error transitorio. */
+  constructor(base, abrir = null, espera = (ms) => new Promise((r) => setTimeout(r, ms))) {
     this.base = base;
+    this.abrir = abrir;
+    this.espera = espera;
     this.dirs = new Map([['', base]]);
+  }
+
+  async _reintentar(op) {
+    for (let i = 0; ; i++) {
+      try {
+        return await op();
+      } catch (e) {
+        if (!this.abrir || !esTransitorio(e) || i >= REINTENTOS_OPFS) throw e;
+        await this.espera(500 * (i + 1));
+        this.base = await this.abrir();
+        this.dirs = new Map([['', this.base]]);
+      }
+    }
   }
 
   async _dir(ruta) {
@@ -85,7 +107,11 @@ export class Escritor {
     return d;
   }
 
-  async escribir(ruta, datos) {
+  escribir(ruta, datos) {
+    return this._reintentar(() => this._escribir(ruta, datos));
+  }
+
+  async _escribir(ruta, datos) {
     const bytes = typeof datos === 'string' ? new TextEncoder().encode(datos) : datos;
     const k = ruta.lastIndexOf('/');
     const dir = await this._dir(k < 0 ? '' : ruta.slice(0, k));
@@ -166,6 +192,21 @@ export async function estado() {
     return null;
   }
 }
+
+/** D101: importación a medias que se puede continuar: { fuentes: [{ nombre, bytes }] } o null. */
+export async function importacionPendiente() {
+  const base = await carpeta();
+  if (!base) return null;
+  const b = await leer(base, 'importando.json');
+  try {
+    return b ? JSON.parse(new TextDecoder().decode(b)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Las mismas fuentes (nombre y tamaño) que la importación pendiente. */
+export const mismasFuentes = (a = [], b = []) => a.length === b.length && a.every((x, i) => x.nombre === b[i].nombre && x.bytes === b[i].bytes);
 
 /** Borra todo lo importado. */
 export async function borrarTodo() {

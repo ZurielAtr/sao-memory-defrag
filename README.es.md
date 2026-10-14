@@ -17,7 +17,7 @@ Port no oficial hecho por fans. Está en desarrollo y todavía tiene diferencias
 
 La APK se procesa en tu equipo y **no se envía al servidor**. Los recursos importados y tu partida quedan en el almacenamiento de ese navegador. No borres los datos del sitio si quieres conservarlos; puedes exportar una copia de tu partida desde la portada. Cambiar de navegador o de dispositivo requiere importar de nuevo.
 
-Se puede jugar con teclado o con controles táctiles. Los controles táctiles no se han probado todavía en un teléfono real, y el funcionamiento en Safari/iPhone/iPad no está validado.
+Se puede jugar con teclado o con controles táctiles. En el móvil (sobre todo iPhone/Safari) es experimental: mientras importa, deja la página abierta y la pantalla encendida. Si la importación se corta, pulsa **Importar** otra vez con el mismo archivo y continuará donde se quedó.
 
 En escritorio, menús, diálogos y combate se muestran centrados con el formato vertical original, a la máxima altura disponible y con márgenes oscuros a los lados. Si el ancho es insuficiente, se ajustan sin recortarse. El regreso conserva su tamaño y orientación; se han corregido solapamientos en Taberna, Herrería, Multi, Mapa y Habilidades. La actualización del catálogo conserva los recursos importados y la partida. La fidelidad completa de algunas pantallas sigue pendiente.
 

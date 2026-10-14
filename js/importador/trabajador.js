@@ -8,7 +8,7 @@ import { importar } from './importar.js';
 import { generarDatos, VERSION_DATOS } from '../datos/generar.js';
 import { Fuente } from '../datos/fuente.js';
 import { BlobRemoto } from './blob_remoto.js';
-import { carpeta, Escritor, Indice, almacenOPFS, leer, borrarTodo, RAIZ } from './opfs.js';
+import { carpeta, Escritor, Indice, almacenOPFS, leer, borrarTodo, RAIZ, mismasFuentes } from './opfs.js';
 import {actualizarImportacion} from './actualizacion.js';
 
 const enviar = (m) => postMessage(m);
@@ -30,17 +30,33 @@ async function generar(base, indice, claveDatos) {
   await generarDatos(fuente, salida, (fraccion, detalle) => enviar({ tipo: 'avance', fase: 'datos', fraccion, detalle }));
 }
 
+// D101: cada GUARDAR_INDICE archivos se guarda el índice parcial; si la importación se corta (en el iPhone, al
+// bloquear la pantalla o por memoria), volver a importar el mismo archivo continúa sin reescribir lo guardado.
+const GUARDAR_INDICE = 1000;
+
 async function hacerImportacion(archivos) {
-  await borrarTodo();
+  const fuentes = archivos.map((f) => ({ nombre: f.name, bytes: f.size }));
+  const previa = await carpeta();
+  const pendiente = previa && (await json(previa, 'importando.json'));
+  const parcial = pendiente && mismasFuentes(pendiente.fuentes, fuentes) ? await json(previa, 'indice_parcial.json') : null;
+  if (!parcial) await borrarTodo();
   const base = await carpeta('', true);
-  const recursos = new Escritor(await base.getDirectoryHandle('descifrado', { create: true }));
-  const indice = new Indice();
+  const abrirRaiz = async () => carpeta('', true);
+  const raiz = new Escritor(base, abrirRaiz);
+  if (!parcial) await raiz.escribir('importando.json', JSON.stringify({ fuentes }));
+  const recursos = new Escritor(await base.getDirectoryHandle('descifrado', { create: true }),
+    async () => (await abrirRaiz()).getDirectoryHandle('descifrado', { create: true }));
+  const indice = new Indice(parcial ?? []);
+  if (parcial) enviar({ tipo: 'avance', fase: 'examinar', fraccion: 0, continuar: indice.archivos.size });
+  let nuevos = 0;
   const r = await importar({
+    saltar: parcial ? async (ruta) => Boolean(indice.buscar(ruta)) : null,
     archivos: archivos.map((f) => ({ blob: f, nombre: f.name })),
     destino: {
       async escribir(ruta, bytes) {
         await recursos.escribir(ruta, bytes);
         indice.agregar(ruta, bytes.length);
+        if (++nuevos % GUARDAR_INDICE === 0) await raiz.escribir('indice_parcial.json', indice.aJSON());
       },
       async borrar(ruta) {
         await recursos.borrar(ruta);
@@ -49,15 +65,15 @@ async function hacerImportacion(archivos) {
     },
     avance: (a) => enviar({ tipo: 'avance', ...a }),
   });
-  const raiz = new Escritor(base);
   await raiz.escribir('indice.json', indice.aJSON());
   await generar(base, indice, r.claves.xxtea);
   // El estado se escribe al final: sin él, la importación no cuenta como hecha.
   const estado = {
-    version: VERSION_DATOS, archivos: r.archivos.length, bytes: r.bytes, fecha: new Date().toISOString(),
-    fuentes: archivos.map((f) => ({ nombre: f.name, bytes: f.size })), claveDatos: hex(r.claves.xxtea),
+    version: VERSION_DATOS, archivos: r.archivos.length, fecha: new Date().toISOString(), fuentes, claveDatos: hex(r.claves.xxtea),
+    bytes: [...indice.archivos.values()].reduce((s, [, tam]) => s + tam, 0),
   };
   await raiz.escribir('estado.json', JSON.stringify(estado));
+  for (const n of ['importando.json', 'indice_parcial.json']) await raiz.borrar(n);
   return estado;
 }
 

@@ -1,7 +1,7 @@
 // Portada del port (index.html, F7, D65, D68): aviso de proyecto no oficial, importación de la APK del jugador
 // (worker trabajador.js → OPFS; sw.js sirve lo importado), regeneración de los datos y copia de la partida.
 
-import { estado as leerEstado, borrarTodo } from './opfs.js';
+import { estado as leerEstado, borrarTodo, importacionPendiente, mismasFuentes } from './opfs.js';
 import { t, texto, idioma, iniciarIdioma } from './idioma.js';
 
 import { VERSION_DATOS } from '../datos/generar.js';
@@ -71,6 +71,19 @@ function mostrarAvance(m, soloDatos) {
   });
 }
 
+// D101: en el móvil, bloquear la pantalla o cambiar de app detiene la página y corta la importación. Mientras se
+// trabaja se pide mantener la pantalla encendida (Screen Wake Lock, Safari 16.4+ y Chrome) y se vuelve a pedir al volver.
+let bloqueoPantalla = null;
+async function mantenerPantalla(activar) {
+  try {
+    if (!activar) { await bloqueoPantalla?.release(); bloqueoPantalla = null; return; }
+    if (!bloqueoPantalla && document.visibilityState !== 'hidden') bloqueoPantalla = await navigator.wakeLock?.request('screen') ?? null;
+    bloqueoPantalla?.addEventListener?.('release', () => { bloqueoPantalla = null; });
+  } catch { bloqueoPantalla = null; }
+}
+document.addEventListener?.('visibilitychange', () => { if (trabajando) void mantenerPantalla(true); });
+let ultimoAvance = null; // fase y fracción del último aviso del worker (para explicar dónde se cortó)
+
 /** Lanza el worker con un mensaje y espera a que acabe. */
 function trabajar(mensaje) {
   if(trabajando)return Promise.reject(new Error(t('Espera a que termine la operación actual.','Wait for the current operation to finish.')));
@@ -78,11 +91,14 @@ function trabajar(mensaje) {
     const w = new Worker(new URL('./trabajador.js', import.meta.url), { type: 'module' });
     const t0 = performance.now();
     trabajando = true;
+    ultimoAvance = null;
+    void mantenerPantalla(true);
     w.onmessage = (ev) => {
       const m = ev.data;
-      if (m.tipo === 'avance') mostrarAvance(m, mensaje.tipo === 'regenerar');
+      if (m.tipo === 'avance') { ultimoAvance = m; mostrarAvance(m, mensaje.tipo === 'regenerar'); }
       else {
         trabajando = false;
+        void mantenerPantalla(false);
         w.terminate();
         if (m.tipo === 'listo') resolver({ estado: m.estado, segundos: Math.round((performance.now() - t0) / 1000) });
         else rechazar(Object.assign(new Error(m.mensaje), { nombre: m.nombre }));
@@ -90,6 +106,7 @@ function trabajar(mensaje) {
     };
     w.onerror = (ev) => {
       trabajando = false;
+      void mantenerPantalla(false);
       w.terminate();
       rechazar(new Error(ev.message || t('error en el worker', 'worker error')));
     };
@@ -162,7 +179,10 @@ async function importar(archivos = [...$('archivo').files], urls = null) {
   // Primero el permiso de almacenamiento persistente: en Firefox, sin él, cada página tiene como mucho 2 GB.
   const persistente = await navigator.storage.persist?.().catch(() => false);
   const libre = await espacioLibre();
-  if (libre < necesario && !forzar) {
+  // D101: al continuar la misma importación, lo ya guardado cuenta dentro del espacio: no se vuelve a comprobar.
+  const pendiente = await importacionPendiente().catch(() => null);
+  const continuar = Boolean(pendiente && mismasFuentes(pendiente.fuentes, archivos.map((f) => ({ nombre: f.name, bytes: f.size }))));
+  if (libre < necesario && !forzar && !continuar) {
     forzar = true;
     texto('importar', () => t('Importar de todos modos', 'Import anyway'));
     return error(() => t(`El navegador solo deja usar ${fmtGB(libre)} a esta página y hacen falta unos ${fmtGB(necesario)}. ${pistaEspacio(persistente)}`, `Your browser only allows ${fmtGB(libre)} for this site, but about ${fmtGB(necesario)} is needed. ${pistaEspacio(persistente)}`));
@@ -177,7 +197,14 @@ async function importar(archivos = [...$('archivo').files], urls = null) {
     if (/quota/i.test(`${e.nombre} ${e.message}`)) {
       await borrarTodo(); // lo importado a medias no sirve: se libera el espacio
       error(() => t(`El navegador no dejó guardar más (se quedó sin espacio para esta página). ${pistaEspacio(persistente)}`, `Your browser could not save more files (this site ran out of storage space). ${pistaEspacio(persistente)}`));
-    } else error(() => t(`No se pudo importar: ${e.message}`, `Import failed. Technical details: ${e.message}`));
+    } else {
+      // D101: lo ya descifrado se conserva; volver a importar el mismo archivo continúa desde ahí.
+      const a = ultimoAvance, fase = a ? fases()[a.fase]?.[2] ?? a.fase : null, pct = a ? Math.floor((a.fraccion ?? 0) * 100) : 0;
+      const donde = fase ? t(` (en «${fase}», ${pct} %${a.archivos ? `, ${a.archivos} archivos` : ''})`, ` (during “${fase}”, ${pct} %${a.archivos ? `, ${a.archivos} files` : ''})`) : '';
+      const seguir = await importacionPendiente().catch(() => null);
+      error(() => t(`No se pudo importar${donde}: ${e.message}.${seguir ? ' Lo ya descifrado se ha guardado: pulsa «Importar» otra vez con el mismo archivo para continuar donde se quedó.' : ''} En el móvil, mantén la página abierta y la pantalla encendida mientras importa.`,
+        `Import failed${donde}. Technical details: ${e.message}.${seguir ? ' The assets decrypted so far were kept: press “Import” again with the same file to continue where it stopped.' : ''} On a phone, keep this page open and the screen on while importing.`));
+    }
     $('progreso').hidden = true;
   } finally {
     forzar = false;

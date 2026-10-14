@@ -19,7 +19,7 @@ The import page opens in English by default. Use **Language** to switch between 
 
 Your APK is processed on your computer and **is not uploaded to a server**. Imported assets and your save stay in that browser's storage. Do not clear the site's data if you want to keep them; you can export a save backup from the landing page. Switching browsers or devices requires importing the game again.
 
-You can play with a keyboard or with touch controls. Touch controls have not been tested on a real phone yet, and Safari/iPhone/iPad support has not been validated.
+You can play with a keyboard or with touch controls. Phones (especially iPhone/Safari) are experimental: keep the page open and the screen on while importing. If the import stops, press **Import** again with the same file and it will continue where it left off.
 
 On the **Equipo** (Team) screen, click **Equipo** (Equipment) next to a character and choose **Arma** (Weapon), **Armadura** (Armor), or **Accesorio** (Accessory). You can equip or remove compatible items from your inventory. Your choices are saved, and their stats and passive effects apply in combat. If the list is empty, you first need to obtain equipment from quests. In **Upgrade**, select equipment, review requirements and confirm strengthening, evolution, selling or exchange. Changes are saved; canceling consumes nothing.
 

@@ -19,7 +19,15 @@ const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 
 const u64 = (b, o) => u32(b, o) + u32(b, o + 4) * 2 ** 32;
 
 async function trozo(blob, ini, fin) {
-  return new Uint8Array(await blob.slice(ini, fin).arrayBuffer());
+  // D101: en el iPhone la lectura del archivo elegido puede fallar de forma pasajera; se reintenta.
+  for (let i = 0; ; i++) {
+    try {
+      return new Uint8Array(await blob.slice(ini, fin).arrayBuffer());
+    } catch (e) {
+      if (i >= 3 || !['NotReadableError', 'UnknownError'].includes(e?.name)) throw e;
+      await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+  }
 }
 
 /** Campo extra ZIP64 (0x0001): reemplaza los valores que valen 0xFFFFFFFF, en orden. */

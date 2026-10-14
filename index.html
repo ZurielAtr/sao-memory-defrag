@@ -72,11 +72,11 @@
     <h2 id="sin-importar" data-es="1. Importa tu APK">1. Import your APK</h2>
     <p data-es="Elige el archivo &lt;code&gt;saomd8.apks&lt;/code&gt; (SAO MD Revival) o la APK del juego. El navegador lee la clave de su
       librería, descifra los recursos y genera los datos. Tarda unos minutos y ocupa unos 4 GB en el disco.">Choose your <code>saomd8.apks</code> file (SAO MD Revival) or the game APK. Your browser reads the key from the game library, decrypts the assets, and generates the game data. This takes a few minutes and uses about 4 GB of disk space.</p>
-    <p class="nota" data-es="Usa un ordenador con Chrome, Brave o Edge y unos 4 GB libres. La compatibilidad completa con Firefox y Safari está pendiente; todavía no hay controles táctiles.">Use a desktop computer with Chrome, Brave, or Edge and about 4 GB of free space. Full Firefox and Safari support is still pending; touch controls are not available yet.</p>
+    <p class="nota" data-es="Recomendado: un ordenador con Chrome, Brave o Edge y unos 4 GB libres. El juego tiene controles táctiles, pero en el móvil (sobre todo iPhone/Safari) es experimental: deja la página abierta y la pantalla encendida mientras importa. Si se corta, pulsa «Importar» otra vez con el mismo archivo y seguirá donde se quedó.">Recommended: a computer with Chrome, Brave, or Edge and about 4 GB of free space. The game has touch controls, but phones (especially iPhone/Safari) are experimental: keep this page open and the screen on while importing. If it stops, press “Import” again with the same file and it will continue where it left off.</p>
     <p class="nota peligro" id="soporte"></p>
     <div class="fila">
       <button id="elegir-archivo" type="button" data-es="Seleccionar APK / APKS">Choose APK / APKS</button>
-      <input type="file" id="archivo" accept=".apks,.apk" multiple hidden>
+      <input type="file" id="archivo" accept=".apks,.apk,.zip" multiple hidden>
       <span id="archivos-elegidos" class="nota" aria-live="polite" data-es="Ningún archivo seleccionado">No files selected</span>
       <button id="importar" class="principal" data-es="Importar">Import</button>
     </div>
