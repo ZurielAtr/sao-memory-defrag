@@ -141,7 +141,7 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[],in
   'image_background_medal','image_background_event','image_title_medal','image_title_event',
   'node_button_medal_3','node_button_medal_4','node_button_event','panel_pageview_lottery',
   'image_time_bg_1','image_time_bg_2','text_header_duration'])p.mostrar(n,false);
- const disponibles=categoria==='weapon'?[]:banners.slice(0,3);
+ const disponibles=categoria==='weapon'?[]:banners; // D108: los 207 banners de Fanadata, más recientes primero
  p.totalBanners=disponibles.length;
  p.indiceBanner=Math.min(Math.max(0,Math.trunc(indice)||0),Math.max(0,disponibles.length-1));
  p.bannerActual=disponibles[p.indiceBanner]??null;
@@ -165,7 +165,7 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[],in
  for(const n of ['node_crystal_info_max','node_crystal_info','node_crystal','image_plus','image_info_max'])p.mostrar(n,false,pagina);
  const b=p.bannerActual;
  pagina.hijos.push(textoMenu('ofertas_taberna',b?b.nombre:'No hay banners disponibles',340,610,{ancho:620,alto:100,tam:42}),
-  textoMenu('nota_taberna',b?`Archivo histórico · ${p.indiceBanner+1}/${disponibles.length}\n${b.inicio} — ${b.fin}\nReconstrucción comunitaria\nConsulta condiciones antes de reclutar.`:'Puedes consultar tu colección.\nNo hay sorteos de equipo disponibles.',340,430,{ancho:620,alto:220,tam:28}));
+  textoMenu('nota_taberna',b?`Archivo histórico · ${p.indiceBanner+1}/${disponibles.length}\n${b.inicio} — ${b.fin}\n${b.provisional?'Tasas provisionales (S-argo)':'Reconstrucción comunitaria'}\nMantén ◀ ▶ para saltar de 10 en 10.`:'Puedes consultar tu colección.\nNo hay sorteos de equipo disponibles.',340,430,{ancho:620,alto:220,tam:28}));
  for(const [nombre,count]of [['button_draw_once',1],['button_draw_eleven',11]]){
   const boton=p.buscar(nombre,panel);boton.visible=!!b;
   if(b){boton.nombre=count===1?'taberna_uno':'taberna_once';p.texto('text_draw_'+(count===1?'once':'eleven')+'_consume_number',b.precios[count],boton);}
@@ -218,7 +218,10 @@ export async function crearMenuPrincipal(nombre,{cuenta,categoria='all',banners=
  ({town:()=>componerTown(p,w,town,tamanos),taberna:()=>componerTaberna(p,w,cuenta,categoria,banners,indice),
   upgrade:()=>componerUpgrade(p,w,cuenta),multi:()=>componerMulti(p,w)})[nombre]();
  if(nombre==='taberna'&&await montarArteGacha(p,p.buscar('page_lottery'),p.bannerActual?.arte)){
-  p.mostrar('ofertas_taberna',false);p.mostrar('nota_taberna',false);
+  p.mostrar('ofertas_taberna',false);
+  // D108: con el cartel, sólo la posición y las fechas, en una banda baja que no tapa el arte.
+  const b=p.bannerActual,nota=p.buscar('nota_taberna');
+  if(nota){nota.y=22;nota.alto=40;nota.texto=`${p.indiceBanner+1}/${p.totalBanners} · ${b.inicio} — ${b.fin}${b.provisional?' · tasas provisionales':''}`;nota.tamFuente=24;}
  }
  await p.precargar();return p;
 }

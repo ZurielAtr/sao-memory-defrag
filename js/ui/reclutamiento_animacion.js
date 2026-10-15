@@ -7,7 +7,9 @@ import {imagen,pilaFuentes,fuenteTTF} from './recursos.js';
 import {rutaWeb} from '../rutas.js';
 
 export function seleccionarResultado(ssbp,rareza){
- const nombre={2:'appear_1',3:'appear_2',4:'appear_3'}[rareza];
+ // FUN_009c4894: R1/2 → 1, R3 → 2, R4 → 3, R5 → 4, R6 → 5. Los recursos de Revival no tienen scene3/appear_5 y sí
+ // appear_6a/6b: para R6 se usa appear_6a (D108, PROVISIONAL; la librería 3.0.2 es anterior a esos recursos).
+ const nombre={1:'appear_1',2:'appear_1',3:'appear_2',4:'appear_3',5:'appear_4',6:'appear_6a'}[rareza];
  const pack=ssbp.packs.find(p=>p.name==='character_lottery_scene3'),animacion=pack?.anims.find(a=>a.name===nombre);
  if(!animacion?.numFrames||!(animacion.fps>0))throw Error('Animación de resultado no disponible para esta rareza');
  const indice=pack.parts.findIndex(p=>p.name==='character');let primero=null,mostrar=null;
@@ -79,10 +81,13 @@ const clip=(ssbp,packNombre,animNombre)=>{
 };
 /** Variantes de FUN_009c46b4/009c4814/009c49cc; no modifican el sorteo guardado. */
 export function seleccionarIntroducciones(ssbp,rareza,{alo=false,random=Math.random}={}){
- if(![2,3,4].includes(rareza))throw Error('Presentación original sólo disponible para R2/R3/R4');
- const argo=rareza===2?1:rareza===3?pesos([[1,.5],[2,.5]],random):pesos([[1,.1],[2,.4],[3,.5]],random);
- const primera=rareza===4?pesos([[1,.2],[2,.8]],random):1;
- const segunda=rareza===2?1:rareza===3?pesos([[1,.5],[2,.5]],random):primera===2?3:pesos([[2,.3],[3,.7]],random);
+ if(![2,3,4,5,6].includes(rareza))throw Error('Presentación original sólo disponible para R2–R6');
+ // D108: FUN_009c46b4 (con +0x2f8 < 6): R4/R5 → appear_2 (80 %) o 1; R6 → appear_3 (80 %) o 2. Argo y escena 2 de
+ // R5/R6 siguen las de R4 (PROVISIONAL: FUN_009c4738 no distingue más allá de R4 salvo el tipo 8).
+ const r4=Math.min(rareza,4);
+ const argo=r4===2?1:r4===3?pesos([[1,.5],[2,.5]],random):pesos([[1,.1],[2,.4],[3,.5]],random);
+ const primera=rareza>=6?pesos([[2,.2],[3,.8]],random):rareza>=4?pesos([[1,.2],[2,.8]],random):1;
+ const segunda=r4===2?1:r4===3?pesos([[1,.5],[2,.5]],random):primera>=2?3:pesos([[2,.3],[3,.7]],random);
  const sufijo=alo?'_alo':'';
  return {argo,primera,segunda,clips:[clip(ssbp,'character_lottery_scene1'+sufijo,'appear_'+primera),clip(ssbp,'character_lottery_scene2'+sufijo,'appear_'+segunda)]};
 }
@@ -199,7 +204,8 @@ export class PresentacionReclutamiento {
   if(this.fase!=='resultado'){this.eventosHasta(this.animacion.numFrames-1);this.siguienteFase();return;}
   if(this.reducida){this.mostrarEstatico();return;}
   if(this.gateStart===null)return;
-  const endpoint=this.gateStart+{2:79,3:159,4:239}[this.rareza];
+  // D108: sin cuadro de salto conocido para R5/R6, el toque lleva a la revelación del personaje.
+  const endpoint=this.gateStart+({2:79,3:159,4:239}[this.rareza]??Math.max(0,this.mostrar-this.gateStart));
   if(this.cuadro<endpoint){this.tiempo=endpoint/this.animacion.fps;this.eventosHasta(endpoint);}
  }
  avanzar(){
@@ -286,6 +292,10 @@ export async function cargarPresentacionReclutamiento(resultados,master,opciones
  const adjuntos=new Map(await Promise.all(nombres.map(async n=>[n,await recursoAdjunto(n)])));
  if(!attachments.has('rarity'))attachments.set('rarity',loadSSBP(superficie.renderer,'ss/others/common/rarity-star_s','common_rarity.ssbp').catch(e=>{attachments.delete('rarity');throw e;}));
  adjuntos.set('rarity',await attachments.get('rarity'));
+ // D108: FUN_009c4894 usa common_rarity_atlas_oran para los personajes R6.
+ if(!attachments.has('rarity_oran'))attachments.set('rarity_oran',loadSSBP(superficie.renderer,'ss/others/common/rarity-star_s','common_rarity.ssbp',
+  (m,i,file)=>file==='common_rarity_atlas.png'?rutaWeb('/assets/ss/others/common/rarity-star_s/common_rarity_atlas_oran.png'):null).catch(e=>{attachments.delete('rarity_oran');throw e;}));
+ adjuntos.set('rarity_oran',await attachments.get('rarity_oran').catch(()=>null));
  const portraits=new Map(await Promise.all([...new Set(resultados.map(r=>r.character_id))].map(async id=>{
   const ficha=master.personaje(id),retrato=ficha?.reclutamiento?.retrato??id;
   return[id,await texturaRetrato(superficie.renderer,retrato)];
@@ -345,8 +355,8 @@ function dibujarPresentacion(p,ctx){
     (p.cuadro<11?'appear_':'wait_')+p.intro.argo,p.cuadro<11?p.cuadro:p.cuadro-11,matrix,alpha,true);
    if(!result)return[];
    if(n==='gate_pivot'&&p.gateVisible)return attachment('gate','gate','appear_'+(p.rareza-1),p.cuadro-at(1),matrix,alpha);
-   if(n==='back_effect_pivot'&&p.backVisible)return attachment('back_light','back_light','type_'+(p.rareza-1),nameFrame,matrix,alpha);
-   if(n==='rarity_pivot'&&p.rarityVisible)return attachment('rarity','common_rarity','rarity_'+p.rareza,nameFrame,matrix,alpha);
+   if(n==='back_effect_pivot'&&p.backVisible)return attachment('back_light','back_light','type_'+Math.min(3,p.rareza-1),nameFrame,matrix,alpha); // FUN_009c4894: type_{índice}, máximo 3
+   if(n==='rarity_pivot'&&p.rarityVisible)return attachment(p.rareza>=6&&p.adjuntos.get('rarity_oran')?'rarity_oran':'rarity','common_rarity','rarity_'+p.rareza,nameFrame,matrix,alpha);
    if(n==='name_pivot'&&p.nombreVisible){
     const text=p.textos.get(p.resultado.character_id);
     return attachment('name_back','name_back','appear',nameFrame,matrix,alpha,false,{attachments:({part,matrix,alpha})=>{

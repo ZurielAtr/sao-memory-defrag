@@ -458,7 +458,11 @@ async function menuPrincipal(nombre,categoria='all',indice=0){
   }
   const bg=await fondo(FONDO_MENU);
   if(ticket!==estado.aperturaPrincipal)return;
-  escena(nombre,[bg,{pantalla:p},{pantalla:vuelta}],acciones);
+  // D108: con 207 banners, mantener ◀ ▶ salta de diez en diez.
+  const largas=nombre==='taberna'&&p.totalBanners>1?{
+    button_left:()=>menuPrincipal('taberna',categoria,Math.max(0,p.indiceBanner-10)),
+    button_right:()=>menuPrincipal('taberna',categoria,Math.min(p.totalBanners-1,p.indiceBanner+10))}:{};
+  escena(nombre,[bg,{pantalla:p},{pantalla:vuelta}],acciones,{largas});
 }
 
 // D96: avatar propio en Town (sin jugadores simulados): entra en un punto al azar, camina al tocar el
@@ -622,7 +626,8 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  const cat=master(),cuenta=estado.cuenta,q=consultarReclutamiento(cat,cuenta,{banner_id:id,count:o.count}),b=q.banner;
  if(!b)return avisoPrincipal('Reclutamiento',q.motivo);
  const probabilidades=probabilidadesBanner(b,cat).sort((a,z)=>z.rareza-a.rareza||a.id-z.id);
- const visibles=o.resultados??(o.todos?probabilidades:probabilidades.filter(r=>r.rareza===4));
+ const maxima=Math.max(...probabilidades.map(r=>r.rareza)); // D108: destacados = la rareza más alta del banner
+ const visibles=o.resultados??(o.todos?probabilidades:probabilidades.filter(r=>r.rareza===maxima));
  const filas=visibles.map((r,i)=>({id:o.resultados?i:r.id,rareza:o.resultados?cat.personaje(r.character_id).rareza:r.rareza,imagen:MINIATURA(o.resultados?r.character_id:r.id),texto:o.resultados?nombrePersonaje(r.character_id):r.nombre,
   detalle:o.resultados?r.duplicate?'Repetido · +'+r.hacking_crystals+' cristales':'Nuevo · ★'+cat.personaje(r.character_id).rareza:
    `★${r.rareza} · ${r.porcentaje.toFixed(3)}%`}));
@@ -636,7 +641,7 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  if(!o.resultados)for(const r of visibles)acciones['pieza_'+r.id]=()=>avisoPrincipal(nombrePersonaje(r.id),
   `Probabilidad individual: ${r.porcentaje.toFixed(6)}%.\nRareza: ${r.rareza}.\nEl personaje se elige por sorteo dentro de este banner.\nPool: Fanadata. Tasas: reconstrucción S-argo.`);
  const detalle=o.resultados?`Resultados guardados · ${b.nombre}\nLos repetidos se convierten en cristales.\nPuedes consultar tu colección desde la Taberna.`:
-  `Pool: Fanadata · tasas/coste: S-argo\nHistórico ${b.inicio} — ${b.fin}\n★4: 4% · ★3: 25% · ★2: 71%\n${o.count} ${o.count===1?'sorteo':'sorteos'}: ${b.precios[o.count]} diamantes${q.permitida?'':'\n'+q.motivo}`;
+  `Pool: Fanadata · tasas/coste: S-argo\nHistórico ${b.inicio} — ${b.fin}\n${textoTasas(b)}${b.provisional?' (provisionales)':''}\n${o.count} ${o.count===1?'sorteo':'sorteos'}: ${b.precios[o.count]} diamantes${q.permitida?'':'\n'+q.motivo}`;
  const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'},{id:'animar_sorteo',texto:'Ver animación'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
  acciones.sorteo_uno=()=>abrir({count:1});acciones.sorteo_once=()=>abrir({count:11});acciones.ver_tasas=()=>abrir({todos:!o.todos,pagina:0});acciones.volver_banner=()=>abrir({resultados:null,pagina:0});
  if(o.resultados)acciones.animar_sorteo=()=>reproducirResultados(id,o,o.resultados);
@@ -648,7 +653,7 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
   const consulta=(await estado.api.request('lottery/quote',{banner_id:id,count:o.count})).data;
   if(!consulta.permitida)return abrir({mensaje:consulta.motivo});
   const popup=await crearConfirmacionOperacion('Reclutar ×'+o.count,
-   `${b.nombre}\nReconstrucción comunitaria\n${o.count} sorteos · ${consulta.coste} diamantes\n★4 4% · ★3 25% · ★2 71%\nRepetidos ★2/3/4: 1/2/50 cristales.\nPool: Fanadata · reglas: S-argo.`);
+   `${b.nombre}\n${b.provisional?'Tasas PROVISIONALES (no oficiales)':'Reconstrucción comunitaria'}\n${o.count} sorteos · ${consulta.coste} diamantes\n${textoTasas(b)}\nRepetidos ${textoRepetidos(b)} cristales.\nPool: Fanadata · reglas: S-argo.`);
   if(confirmTicket!==estado.aperturaPrincipal)return;let ocupada=false;
   const cancelar=()=>escena('reclutamiento',anterior.capas,anterior.acciones,{teclado:true});
   const ventana=popupMenu('confirmar-reclutamiento',anterior.capas,popup,{confirmar_operacion:async()=>{
@@ -662,6 +667,10 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  const bg=await fondo(FONDO_MENU);if(ticket!==estado.aperturaPrincipal)return;
  escena('reclutamiento',[bg,{pantalla:p}],acciones,{teclado:true});
 }
+
+// D108: tasas y compensaciones del banner, de la rareza más alta a la más baja (★6 3% · ★5 3% · ★4 4% · …).
+const textoTasas=b=>[...(b.grupos??[])].sort((x,y)=>y.rareza-x.rareza).map(g=>`★${g.rareza} ${g.ratio/100}%`).join(' · ');
+const textoRepetidos=b=>{const r=(b.grupos??[]).map(g=>g.rareza).sort((x,y)=>x-y);return `★${r.join('/')}: ${r.map(k=>b.duplicados?.[k]??'?').join('/')}`;};
 
 async function reproducirResultados(id,o,resultados){
  const ticket=++estado.aperturaPrincipal;await cargarCuenta();if(ticket!==estado.aperturaPrincipal)return;

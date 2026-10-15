@@ -71,6 +71,13 @@
       <button id="regenerar" title="Regenerate game data from the assets already imported" data-title-es="Vuelve a generar los datos del juego desde los recursos ya importados" data-es="Regenerar datos">Regenerate data</button>
       <button id="borrar" class="peligro" data-es="Borrar lo importado">Delete imported files</button>
     </div>
+    <h3 data-es="Opcional: carteles originales de los banners">Optional: original banner artwork</h3>
+    <p class="nota" data-es="La Taberna tiene 207 banners, pero sus carteles no vienen en la APK. Puedes añadirlos con el respaldo histórico de descargas del juego (&lt;code&gt;files.zip&lt;/code&gt;, unos 2,4 GB, versión 1.42.93), que enlaza el proyecto comunitario &lt;a href=&quot;https://github.com/Nightshades1/Sword-Art-Online-MD---Asset-Unpacker&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Nightshades1/Asset-Unpacker&lt;/a&gt;. Sólo cubre los banners hasta mediados de 2020; los posteriores se ven sin cartel. Se procesa en tu navegador y no se sube a ningún sitio. Si la página no tiene guardada la clave de tu APK, elige el respaldo y tu APK a la vez.">The Tavern has 207 banners, but their artwork is not in the APK. You can add it with the game’s historical download backup (<code>files.zip</code>, about 2.4 GB, version 1.42.93), linked by the community project <a href="https://github.com/Nightshades1/Sword-Art-Online-MD---Asset-Unpacker" target="_blank" rel="noopener">Nightshades1/Asset-Unpacker</a>. It only covers banners up to mid-2020; later ones are shown without artwork. It is processed in your browser and never uploaded. If the page does not have your APK key saved, choose the backup and your APK together.</p>
+    <div class="fila">
+      <button id="elegir-respaldo" type="button" data-es="Añadir respaldo de descargas">Add download backup</button>
+      <input type="file" id="respaldo" accept=".zip,.apks,.apk" multiple hidden>
+      <span id="respaldo-estado" class="nota" aria-live="polite"></span>
+    </div>
   </section>
 
   <section>
