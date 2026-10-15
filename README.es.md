@@ -2,9 +2,11 @@
 
 # SAO Memory Defrag · Port para navegador
 
-**Este proyecto se está desarrollando en su totalidad con inteligencia artificial generativa, utilizando modelos como Claude Opus 5.5 y GPT 6.1 Sol.**
+> **Proyecto finalizado (14 de octubre de 2026).** El desarrollo terminó: el equipo que revivió *Naruto Shippuden: Ultimate Ninja Blazing* anunció en Reddit que va a revivir SAO Memory Defrag, que era justo el objetivo de este port. La página sigue disponible tal como quedó (versión D109), pero ya no recibirá cambios ni correcciones.
 
-Port no oficial hecho por fans. Está en desarrollo y todavía tiene diferencias respecto al juego original.
+**Este proyecto se desarrolló en su totalidad con inteligencia artificial generativa, utilizando modelos como Claude Opus 5.5 y GPT 6.1 Sol.**
+
+Port no oficial hecho por fans. Quedó con diferencias respecto al juego original; las secciones de abajo describen el estado final.
 
 **[Abrir el juego](https://zurielatr.github.io/sao-memory-defrag/)**
 
