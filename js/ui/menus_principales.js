@@ -141,23 +141,27 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[],in
   'image_background_medal','image_background_event','image_title_medal','image_title_event',
   'node_button_medal_3','node_button_medal_4','node_button_event','panel_pageview_lottery',
   'image_time_bg_1','image_time_bg_2','text_header_duration'])p.mostrar(n,false);
- const disponibles=categoria==='weapon'?[]:banners; // D108: los 207 banners de Fanadata, más recientes primero
+ // D108/D109: los banners de personajes y de armas de Fanadata, más recientes primero.
+ const porCategoria={all:banners,chara:banners.filter(b=>b.tipo!=='arma'),weapon:banners.filter(b=>b.tipo==='arma')};
+ const disponibles=porCategoria[categoria];
  p.totalBanners=disponibles.length;
  p.indiceBanner=Math.min(Math.max(0,Math.trunc(indice)||0),Math.max(0,disponibles.length-1));
  p.bannerActual=disponibles[p.indiceBanner]??null;
+ const armas=categoria==='weapon'||p.bannerActual?.tipo==='arma';
  const nombres={all:'Todos',chara:'Personajes',weapon:'Equipo'};
  for(const k of ['all','chara','weapon']){
   const b=p.buscar('button_category_'+k);b.alpha=k===categoria?255:170;
-  p.texto('text_'+k,nombres[k]+` (${k==='weapon'?0:disponibles.length})`);
+  p.texto('text_'+k,nombres[k]+` (${porCategoria[k].length})`);
   p.mostrar('image_new',false,b);
  }
- const panel=p.buscar(categoria==='weapon'?'panel_equipment_buttons':'panel_character_buttons');
+ const panel=p.buscar(armas?'panel_equipment_buttons':'panel_character_buttons');
  for(const n of ['panel_character_buttons','panel_equipment_buttons','panel_event_buttons','panel_storage_buttons'])p.mostrar(n,n===panel.nombre);
  for(const n of ['button_draw_medal','button_draw_crystal','image_draw_once_cp','image_draw_eleven_cp'])p.mostrar(n,false,panel);
- const consultar=p.buscar(categoria==='weapon'?'button_odd':'button_testplay',panel);
- consultar.nombre='consultar_taberna';
- p.texto(categoria==='weapon'?'text_odd_2':'text_testplay',categoria==='chara'?'Tus personajes':'Gestionar equipo',consultar);
- const odd=categoria==='weapon'?null:p.buscar('button_odd',panel);
+ // Con un banner de armas, el único botón del panel de equipo (button_odd) abre el banner; sin banners, el almacén.
+ const consultar=p.buscar(armas?'button_odd':'button_testplay',panel);
+ if(armas&&p.bannerActual){consultar.nombre='banner_'+p.bannerActual.id;p.texto('text_odd_2','Ver banner',consultar);}
+ else{consultar.nombre='consultar_taberna';p.texto(armas?'text_odd_2':'text_testplay',categoria==='chara'?'Tus personajes':'Gestionar equipo',consultar);}
+ const odd=armas?null:p.buscar('button_odd',panel);
  if(odd){odd.visible=!!p.bannerActual;if(p.bannerActual)odd.nombre='banner_'+p.bannerActual.id;}
  // El catálogo comunitario no guarda el arte de estos banners históricos.
  // No mostrar la imagen de prueba del editor ni asignarle un banner ajeno.
@@ -165,7 +169,7 @@ export function componerTaberna(p,plantilla,cuenta,categoria='all',banners=[],in
  for(const n of ['node_crystal_info_max','node_crystal_info','node_crystal','image_plus','image_info_max'])p.mostrar(n,false,pagina);
  const b=p.bannerActual;
  pagina.hijos.push(textoMenu('ofertas_taberna',b?b.nombre:'No hay banners disponibles',340,610,{ancho:620,alto:100,tam:42}),
-  textoMenu('nota_taberna',b?`Archivo histórico · ${p.indiceBanner+1}/${disponibles.length}\n${b.inicio} — ${b.fin}\n${b.provisional?'Tasas provisionales (S-argo)':'Reconstrucción comunitaria'}\nMantén ◀ ▶ para saltar de 10 en 10.`:'Puedes consultar tu colección.\nNo hay sorteos de equipo disponibles.',340,430,{ancho:620,alto:220,tam:28}));
+  textoMenu('nota_taberna',b?`${b.tipo==='arma'?'Armas · ':''}Archivo histórico ·${p.indiceBanner+1}/${disponibles.length}\n${b.inicio} — ${b.fin}\n${b.provisional?'Tasas provisionales (S-argo)':'Reconstrucción comunitaria'}\nMantén ◀ ▶ para saltar de 10 en 10.`:'Puedes consultar tu colección.\nNo hay sorteos de equipo disponibles.',340,430,{ancho:620,alto:220,tam:28}));
  for(const [nombre,count]of [['button_draw_once',1],['button_draw_eleven',11]]){
   const boton=p.buscar(nombre,panel);boton.visible=!!b;
   if(b){boton.nombre=count===1?'taberna_uno':'taberna_once';p.texto('text_draw_'+(count===1?'once':'eleven')+'_consume_number',b.precios[count],boton);}
@@ -209,7 +213,7 @@ export function componerMulti(p,plantilla){
  return p;
 }
 
-export async function crearMenuPrincipal(nombre,{cuenta,categoria='all',banners=[],indice=0,town=null}={}){
+export async function crearMenuPrincipal(nombre,{cuenta,categoria='all',banners=[],indice=0,town=null,cartel=null}={}){
  const rutas={town:'ui/common/common_menu_other_s.csb',taberna:'ui/lottery/character_lottery_s.csb',
   upgrade:'ui/blacksmith/blacksmith_s.csb',multi:'ui/quest_board/quest_board_top_s.csb'};
  if(!rutas[nombre])throw Error('Menú desconocido');
@@ -217,11 +221,12 @@ export async function crearMenuPrincipal(nombre,{cuenta,categoria='all',banners=
  const tamanos=nombre==='town'?await tamanosCiudad(town):{};
  ({town:()=>componerTown(p,w,town,tamanos),taberna:()=>componerTaberna(p,w,cuenta,categoria,banners,indice),
   upgrade:()=>componerUpgrade(p,w,cuenta),multi:()=>componerMulti(p,w)})[nombre]();
- if(nombre==='taberna'&&await montarArteGacha(p,p.buscar('page_lottery'),p.bannerActual?.arte)){
+ // D109: cartel original si está entre los recursos; si no, uno generado con piezas de la APK (cartel_banner.js).
+ if(nombre==='taberna'&&await montarArteGacha(p,p.buscar('page_lottery'),cartel?await cartel(p.bannerActual):p.bannerActual?.arte)){
   p.mostrar('ofertas_taberna',false);
   // D108: con el cartel, sólo la posición y las fechas, en una banda baja que no tapa el arte.
   const b=p.bannerActual,nota=p.buscar('nota_taberna');
-  if(nota){nota.y=22;nota.alto=40;nota.texto=`${p.indiceBanner+1}/${p.totalBanners} · ${b.inicio} — ${b.fin}${b.provisional?' · tasas provisionales':''}`;nota.tamFuente=24;}
+  if(nota){nota.y=22;nota.alto=40;nota.texto=`${b.tipo==='arma'?'Armas · ':''}${p.indiceBanner+1}/${p.totalBanners} · ${b.inicio} — ${b.fin}${b.provisional?' · tasas provisionales':''}`;nota.tamFuente=24;}
  }
  await p.precargar();return p;
 }

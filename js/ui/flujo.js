@@ -48,6 +48,7 @@ import {cargarPresentacionReclutamiento,controlesResultado} from './reclutamient
 import {movimientoReducido} from './animaciones.js';
 import {PopupAnimado} from './popup_menu.js';
 import {cargarEfectosArbol, liberacionNodo, subidasEstado, cambiosSkills} from './efectos_arbol.js';
+import {cartelBanner} from './cartel_banner.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -58,6 +59,7 @@ const FONDO_HOME = 'images/ui_background/bg_ui_017.jpg'; // PROVISIONAL
 const FONDO_MUNDO = (id) => `images/quest/world/background/${id}.jpg`; // world.f0 (DEDUCCIÓN por el nombre)
 const IMAGEN_CAPITULO = (id) => `images/quest/chapter/list/chapter_list_${id}.png`; // chapter.f0
 const MINIATURA = (id) => `images/unit/thumbnail/256/thumbnail_${id}.png`;
+const MINIATURA_EQUIPO = (e) => (e ? `images/equipment/thumb/256/${e.imagen}_thumb256.png` : null);
 const ELEMENTOS = [null, 'unattributed', 'fire', 'water', 'wind', 'light', 'dark', 'earth']; // NOTAS "Elementos"
 const NOMBRE_INICIAL = 'Kirito';
 const LARGO = 0.5; // s de pulsación para el detalle (la lista dice "mantén pulsado")
@@ -426,7 +428,7 @@ async function avisoPrincipal(titulo,mensaje){
 async function menuPrincipal(nombre,categoria='all',indice=0){
   const ticket=++estado.aperturaPrincipal;
   await cargarCuenta();
-  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,indice,banners:master().reclutamiento().banners,town:master().data.town}),pie()]);
+  const [p,vuelta]=await Promise.all([crearMenuPrincipal(nombre,{cuenta:estado.cuenta,categoria,indice,banners:master().reclutamiento().banners,town:master().data.town,cartel:b=>cartelBanner(b,master())}),pie()]);
   if(ticket!==estado.aperturaPrincipal)return;
   const abrirEquipo=()=>equipo(null,()=>menuPrincipal(nombre,categoria,indice));
   const pendiente=k=>()=>avisoPrincipal(...PENDIENTES_MENU[k]);
@@ -435,11 +437,11 @@ async function menuPrincipal(nombre,categoria='all',indice=0){
     acciones.diamonds=pendiente('diamonds');
     for(const k of ['all','chara','weapon'])acciones['button_category_'+k]=()=>menuPrincipal('taberna',k);
     acciones.consultar_taberna=categoria==='chara'?()=>listaPersonajes(null,0,{volver:()=>menuPrincipal(nombre,categoria),seleccionar:false}):abrirEquipo;
-    if(categoria!=='weapon')for(const b of master().reclutamiento().banners)acciones['banner_'+b.id]=()=>reclutamiento(b.id);
+    for(const b of master().reclutamiento().banners)acciones['banner_'+b.id]=()=>reclutamiento(b.id);
     acciones.button_left=()=>menuPrincipal('taberna',categoria,Math.max(0,p.indiceBanner-1));
     acciones.button_right=()=>menuPrincipal('taberna',categoria,Math.min(p.totalBanners-1,p.indiceBanner+1));
     if(p.bannerActual)for(const [accion,count]of [['taberna_uno',1],['taberna_once',11]])acciones[accion]=()=>reclutamiento(p.bannerActual.id,{pagina:0,count,todos:false,mensaje:'',resultados:null});
-    if(categoria!=='weapon')acciones.ultimo_sorteo=async()=>{
+    acciones.ultimo_sorteo=async()=>{
       const r=(await estado.api.request('lottery/last-result')).data;
       if(!r)return avisoPrincipal('Último sorteo','Todavía no hay un resultado guardado en tu partida.');
       return reclutamiento(r.banner_id,{pagina:0,count:r.count,todos:false,mensaje:'Resultado guardado · consultar no consume diamantes',resultados:r.results});
@@ -625,35 +627,39 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
  const ticket=++estado.aperturaPrincipal;await cargarCuenta();if(ticket!==estado.aperturaPrincipal)return;
  const cat=master(),cuenta=estado.cuenta,q=consultarReclutamiento(cat,cuenta,{banner_id:id,count:o.count}),b=q.banner;
  if(!b)return avisoPrincipal('Reclutamiento',q.motivo);
- const probabilidades=probabilidadesBanner(b,cat).sort((a,z)=>z.rareza-a.rareza||a.id-z.id);
+ const armas=b.tipo==='arma'; // D109: banner de armas (piezas de equipo, sin repetidos)
+ const probabilidades=probabilidadesBanner(b,cat).sort((a,z)=>Number(z.destacada)-Number(a.destacada)||z.rareza-a.rareza||a.id-z.id);
  const maxima=Math.max(...probabilidades.map(r=>r.rareza)); // D108: destacados = la rareza más alta del banner
- const visibles=o.resultados??(o.todos?probabilidades:probabilidades.filter(r=>r.rareza===maxima));
- const filas=visibles.map((r,i)=>({id:o.resultados?i:r.id,rareza:o.resultados?cat.personaje(r.character_id).rareza:r.rareza,imagen:MINIATURA(o.resultados?r.character_id:r.id),texto:o.resultados?nombrePersonaje(r.character_id):r.nombre,
+ const visibles=o.resultados??(o.todos?probabilidades:probabilidades.filter(r=>armas?r.destacada:r.rareza===maxima));
+ const ficha=r=>cat.equipo(r.equipment_id??r.id);
+ const filas=visibles.map((r,i)=>armas?{id:o.resultados?i:r.id,equipo:true,rareza:ficha(r)?.rareza??r.rareza,imagen:MINIATURA_EQUIPO(ficha(r)),texto:ficha(r)?.nombre??String(r.id),
+   detalle:o.resultados?'Nueva pieza · ★'+ficha(r)?.rareza:`★${r.rareza} · ${r.porcentaje.toFixed(3)}%`}:({id:o.resultados?i:r.id,rareza:o.resultados?cat.personaje(r.character_id).rareza:r.rareza,imagen:MINIATURA(o.resultados?r.character_id:r.id),texto:o.resultados?nombrePersonaje(r.character_id):r.nombre,
   detalle:o.resultados?r.duplicate?'Repetido · +'+r.hacking_crystals+' cristales':'Nuevo · ★'+cat.personaje(r.character_id).rareza:
    `★${r.rareza} · ${r.porcentaje.toFixed(3)}%`}));
  const abrir=cambios=>reclutamiento(id,{...o,...cambios,mensaje:''});
- const acciones={button_footer_return:()=>menuPrincipal('taberna','chara'),pagina_anterior:()=>abrir({pagina:Math.max(0,o.pagina-1)}),pagina_siguiente:()=>abrir({pagina:Math.min(Math.ceil(filas.length/6)-1,o.pagina+1)})};
+ const acciones={button_footer_return:()=>menuPrincipal('taberna',armas?'weapon':'chara'),pagina_anterior:()=>abrir({pagina:Math.max(0,o.pagina-1)}),pagina_siguiente:()=>abrir({pagina:Math.min(Math.ceil(filas.length/6)-1,o.pagina+1)})};
  if(!o.resultados&&!o.todos){
-  const banners=cat.reclutamiento().banners.filter(b=>b.disponible),i=banners.findIndex(b=>b.id===id);
+  const banners=cat.reclutamiento().banners.filter(x=>x.disponible&&(x.tipo==='arma')===armas),i=banners.findIndex(b=>b.id===id);
   const cambiar=delta=>reclutamiento(banners[(i+delta+banners.length)%banners.length].id,{...o,pagina:0,mensaje:''});
   acciones.pagina_anterior=()=>cambiar(-1);acciones.pagina_siguiente=()=>cambiar(1);
  }
- if(!o.resultados)for(const r of visibles)acciones['pieza_'+r.id]=()=>avisoPrincipal(nombrePersonaje(r.id),
-  `Probabilidad individual: ${r.porcentaje.toFixed(6)}%.\nRareza: ${r.rareza}.\nEl personaje se elige por sorteo dentro de este banner.\nPool: Fanadata. Tasas: reconstrucción S-argo.`);
- const detalle=o.resultados?`Resultados guardados · ${b.nombre}\nLos repetidos se convierten en cristales.\nPuedes consultar tu colección desde la Taberna.`:
+ if(!o.resultados)for(const r of visibles)acciones['pieza_'+r.id]=()=>avisoPrincipal(armas?r.nombre:nombrePersonaje(r.id),
+  `Probabilidad individual: ${r.porcentaje.toFixed(6)}%.\nRareza: ${r.rareza}.\n${armas?'El arma':'El personaje'} se elige por sorteo dentro de este banner.\nPool: Fanadata. Tasas: reconstrucción S-argo.`);
+ const detalle=o.resultados?(armas?`Resultados guardados · ${b.nombre}\nLas armas están en tu almacén (Equipo).`:`Resultados guardados · ${b.nombre}\nLos repetidos se convierten en cristales.\nPuedes consultar tu colección desde la Taberna.`):
   `Pool: Fanadata · tasas/coste: S-argo\nHistórico ${b.inicio} — ${b.fin}\n${textoTasas(b)}${b.provisional?' (provisionales)':''}\n${o.count} ${o.count===1?'sorteo':'sorteos'}: ${b.precios[o.count]} diamantes${q.permitida?'':'\n'+q.motivo}`;
- const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'},{id:'animar_sorteo',texto:'Ver animación'}]:[{id:'sorteo_uno',texto:'×1 · 25 MD'},{id:'sorteo_once',texto:'×11 · 250 MD'},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
+ const controles=o.resultados?[{id:'volver_banner',texto:'Volver al banner'},{id:'animar_sorteo',texto:armas?'Ir a Equipo':'Ver animación'}]:[{id:'sorteo_uno',texto:`×1 · ${b.precios[1]} MD`},{id:'sorteo_once',texto:`×11 · ${b.precios[11]} MD`},{id:'ver_tasas',texto:o.todos?'Destacados':'Todas las tasas'}];
  acciones.sorteo_uno=()=>abrir({count:1});acciones.sorteo_once=()=>abrir({count:11});acciones.ver_tasas=()=>abrir({todos:!o.todos,pagina:0});acciones.volver_banner=()=>abrir({resultados:null,pagina:0});
- if(o.resultados)acciones.animar_sorteo=()=>reproducirResultados(id,o,o.resultados);
- const p=await crearPantallaOperacion({modo:'reclutamiento',arte:b.arte,resultados:Boolean(o.resultados),todos:o.todos,count:o.count,diamantes:cuenta.user.diamond,titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
+ if(o.resultados)acciones.animar_sorteo=armas?()=>equipo(null,()=>reclutamiento(id,o)):()=>reproducirResultados(id,o,o.resultados);
+ const arte=o.resultados||o.todos?null:await cartelBanner(b,cat);if(ticket!==estado.aperturaPrincipal)return;
+ const p=await crearPantallaOperacion({modo:'reclutamiento',arte,precios:b.precios,armas,resultados:Boolean(o.resultados),todos:o.todos,count:o.count,diamantes:cuenta.user.diamond,titulo:o.resultados?'Resultado · Reclutamiento':b.nombre,saldoTexto:`${cuenta.user.diamond} diamantes · ${cuenta.user.hacking_crystals??0} cristales`,filas,pagina:o.pagina,
   detalle,controles,confirmable:q.permitida&&!o.resultados,confirmarTexto:'Reclutar ×'+o.count,mensaje:o.mensaje});
  if(q.permitida&&!o.resultados)acciones.revisar_operacion=async()=>{
   const confirmTicket=++estado.aperturaPrincipal;
   const anterior={capas:estado.capas,acciones:estado.acciones};
   const consulta=(await estado.api.request('lottery/quote',{banner_id:id,count:o.count})).data;
   if(!consulta.permitida)return abrir({mensaje:consulta.motivo});
-  const popup=await crearConfirmacionOperacion('Reclutar ×'+o.count,
-   `${b.nombre}\n${b.provisional?'Tasas PROVISIONALES (no oficiales)':'Reconstrucción comunitaria'}\n${o.count} sorteos · ${consulta.coste} diamantes\n${textoTasas(b)}\nRepetidos ${textoRepetidos(b)} cristales.\nPool: Fanadata · reglas: S-argo.`);
+  const popup=await crearConfirmacionOperacion((armas?'Sorteo de armas ×':'Reclutar ×')+o.count,
+   `${b.nombre}\n${b.provisional?'Tasas PROVISIONALES (no oficiales)':'Reconstrucción comunitaria'}\n${o.count} sorteos · ${consulta.coste} diamantes\n${textoTasas(b)}\n${armas?'Cada arma es una pieza nueva.':`Repetidos ${textoRepetidos(b)} cristales.`}\nPool: Fanadata · reglas: S-argo.`);
   if(confirmTicket!==estado.aperturaPrincipal)return;let ocupada=false;
   const cancelar=()=>escena('reclutamiento',anterior.capas,anterior.acciones,{teclado:true});
   const ventana=popupMenu('confirmar-reclutamiento',anterior.capas,popup,{confirmar_operacion:async()=>{
@@ -669,13 +675,15 @@ async function reclutamiento(id,o={pagina:0,count:1,todos:false,mensaje:'',resul
 }
 
 // D108: tasas y compensaciones del banner, de la rareza más alta a la más baja (★6 3% · ★5 3% · ★4 4% · …).
-const textoTasas=b=>[...(b.grupos??[])].sort((x,y)=>y.rareza-x.rareza).map(g=>`★${g.rareza} ${g.ratio/100}%`).join(' · ');
+const textoTasas=b=>[...(b.grupos??[])].sort((x,y)=>Number(Boolean(y.destacadas))-Number(Boolean(x.destacadas))||y.rareza-x.rareza).map(g=>`${g.destacadas?'Destacadas':'★'+g.rareza} ${g.ratio/100}%`).join(' · ');
 const textoRepetidos=b=>{const r=(b.grupos??[]).map(g=>g.rareza).sort((x,y)=>x-y);return `★${r.join('/')}: ${r.map(k=>b.duplicados?.[k]??'?').join('/')}`;};
 
 async function reproducirResultados(id,o,resultados){
  const ticket=++estado.aperturaPrincipal;await cargarCuenta();if(ticket!==estado.aperturaPrincipal)return;
  const lista=mensaje=>reclutamiento(id,{...o,pagina:0,resultados,mensaje});
  if(!resultados.length)return lista('Resultados guardados en tu partida');
+ // D109: el sorteo de armas tiene su propia presentación (ss/others/equipment_lottery_s), todavía sin portar.
+ if(resultados[0].equipment_id)return lista('Armas añadidas a tu almacén');
  const controlador=new AbortController();let activa=false,cambiando=false,animacion=null;
  let vocesGacha=[];
  const pendientes=[];

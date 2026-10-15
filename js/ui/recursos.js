@@ -49,6 +49,11 @@ export function imagen(ruta) {
   if (!imagenes.has(ruta)) imagenes.set(ruta, existe(ruta).then((ok) => (ok ? cargarImagen(url(ruta)) : null)));
   return imagenes.get(ruta);
 }
+/** D109: registra una imagen hecha en el navegador (p. ej. un cartel generado) bajo una ruta virtual. */
+export function registrarImagen(ruta, lienzo) {
+  imagenes.set(ruta, Promise.resolve(lienzo));
+  return ruta;
+}
 
 // ---------- .plist (XML de Apple) ----------
 /** Parser mínimo de plist XML → objeto JS (dict, array, string, integer, real, true, false). */

@@ -204,7 +204,7 @@ export async function exportarApi(fuente, salida) {
     personajes: characters, expNivel: expLevel, nivelMaximo: maxLevel, objetos: items, tiposObjeto, equipos: equipment,
     habilidades: await catalogoHabilidades(fuente),
     operaciones:await catalogoOperaciones(fuente),
-    reclutamiento:await catalogoReclutamiento(fuente,characters),
+    reclutamiento:await catalogoReclutamiento(fuente,characters,equipment),
     town: await catalogoTown(fuente),
     misiones, drops, recompensas: rewards,
   };

@@ -44,15 +44,6 @@ async function buscarLib(fuentes) {
   return null;
 }
 
-/** D108: claves de la librería de una APK elegida (sin importar recursos), para el respaldo de descargas. */
-export async function clavesDeArchivos(archivos, avance = () => {}) {
-  const fuentes = [];
-  for (const a of archivos) fuentes.push(await examinar(a.blob, a.nombre));
-  const lib = await buscarLib(fuentes);
-  if (!lib) throw new Error('no se encontró la librería del juego (lib/armeabi-v7a/libcocos2dcpp.so)');
-  return sacarClaves(lib, avance);
-}
-
 /**
  * Importa. archivos: [{ blob (File/Blob), nombre }]. Devuelve { claves, archivos: [rutas escritas], bytes }.
  * `saltar(ruta)` (opcional) evita reescribir lo que ya está (para seguir una importación cortada).

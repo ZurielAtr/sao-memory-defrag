@@ -334,7 +334,12 @@ const RUTAS = {
     if(quote!==selloReclutamiento(estado,q))fail('inventario_cambiado','El banner o tu colección cambió; revisa de nuevo el sorteo');
     const sorteados=Array.from({length:count},()=>sortearPersonaje(q.banner,this.random));
     estado.user.diamond-=q.coste;
-    const resultados=sorteados.map(id=>{
+    // D109: banner de armas. Cada arma es una pieza nueva del almacén (no hay repetidos).
+    const resultados=q.banner.tipo==='arma'?sorteados.map(id=>{
+      const pieza={uid:estado.siguienteUid++,equipment_id:id,level:1,created_at:this.now()};
+      (estado.equipment??=[]).push(pieza);
+      return {equipment_id:id,duplicate:false,equipment:copy(pieza)};
+    }):sorteados.map(id=>{
       const duplicado=estado.characters.some(c=>c.character_id===id),rareza=this.master.personaje(id).rareza;
       if(duplicado){const cristales=q.banner.duplicados?.[rareza];if(!Number.isSafeInteger(cristales)||cristales<0)fail('datos_incompletos','Falta la compensación del personaje repetido');
         estado.user.hacking_crystals=(estado.user.hacking_crystals??0)+cristales;

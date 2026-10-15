@@ -105,14 +105,16 @@ function componerReclutamiento(p,w,o){
  for(const k of ['image_background_medal','image_background_event','text_retry_confirm','image_lottery_retrial_background'])p.mostrar(k,false);
  const esBanner=!resultados&&!todos;let lista;
  if(esBanner){
-  for(const k of ['image_title_medal','image_title_event','panel_equipment_buttons','panel_event_buttons','panel_storage_buttons',
+  // D109: un banner de armas usa el panel de equipo del mismo CSB («Weapon Purchase»).
+  const nombrePanel=o.armas?'panel_equipment_buttons':'panel_character_buttons';
+  for(const k of ['image_title_medal','image_title_event','panel_character_buttons','panel_equipment_buttons','panel_event_buttons','panel_storage_buttons',
    'button_lottery','button_crystal','button_selection','button_category_all','button_category_chara','button_category_weapon',
-   'medal_category_buttons','event_category_buttons','image_background_medal','image_background_event'])p.mostrar(k,false);
-  const panel=p.buscar('panel_character_buttons');for(const k of ['button_draw_medal','button_draw_crystal','button_testplay'])p.mostrar(k,false,panel);
+   'medal_category_buttons','event_category_buttons','image_background_medal','image_background_event'])if(k!==nombrePanel)p.mostrar(k,false);
+  const panel=p.buscar(nombrePanel);for(const k of ['button_draw_medal','button_draw_crystal','button_testplay','image_draw_once_cp','image_draw_eleven_cp'])p.mostrar(k,false,panel);
   renombrar(p,'button_odd','ver_tasas',true,panel);
   renombrar(p,'button_draw_once',o.count===1?'revisar_operacion':'sorteo_uno',o.count!==1||o.confirmable,panel);
   renombrar(p,'button_draw_eleven',o.count===11?'revisar_operacion':'sorteo_once',o.count!==11||o.confirmable,panel);
-  setTexto(p,'text_draw_once_consume_number',25);setTexto(p,'text_draw_eleven_consume_number',250);
+  setTexto(p,'text_draw_once_consume_number',o.precios?.[1]??25);setTexto(p,'text_draw_eleven_consume_number',o.precios?.[11]??250);
   lista=p.buscar('page_lottery');lista.hijos=[];
   lista.hijos.push(textoMenu('titulo_operacion',o.titulo,340,806,{ancho:630,alto:70,tam:31}),
    textoMenu('nota_arte_banner','Banner histórico · arte original no disponible',340,739,{ancho:630,alto:45,tam:22}));
@@ -125,15 +127,18 @@ function componerReclutamiento(p,w,o){
   p.mostrar('panel_event_buttons',false);const botones=p.buscar('panel_character_buttons');
   p.mostrar('button_draw_crystal',false,botones);p.mostrar('button_draw_medal',false,botones);
   const uno=renombrar(p,'button_draw_once','volver_banner',true,botones),once=renombrar(p,'button_draw_eleven','animar_sorteo',true,botones);
-  for(const[b,t]of [[uno,'Volver al banner'],[once,'Ver animación']]){
+  for(const[b,t]of [[uno,o.controles?.[0]?.texto??'Volver al banner'],[once,o.controles?.[1]?.texto??'Ver animación']]){
    const modelo=w.aceptar.buscar('button_sort_0');Object.assign(b,{boton:clonar(modelo.boton),scale9:clonar(modelo.scale9),ancho:modelo.ancho,alto:modelo.alto});
    b.hijos=[textoClaro(b.nombre+'_texto',t,b.ancho/2,b.alto/2,{ancho:280,alto:80,tam:27})];
   }
   lista=p.buscar('panel_character_list');lista.hijos=[];
  }
  filas.slice(pag*6,pag*6+6).forEach((r,i)=>{
-  const n=tarjetaPersonaje(w,r),escala=esBanner?.83:.9;
-  Object.assign(n,{x:esBanner?35+215*(i%3):22+240*(i%3),y:(esBanner?472:lista.alto-265)-Math.floor(i/3)*(esBanner?258:280),escalaX:escala,escalaY:escala});lista.hijos.push(n);
+  // D109: las armas usan la tarjeta de equipo (anclada al centro, la de personaje a la esquina).
+  const n=r.equipo?tarjetaEquipo(w,{...r,nivel:1},[]):tarjetaPersonaje(w,r),escala=esBanner?.83:.9;
+  Object.assign(n,{x:esBanner?35+215*(i%3):22+240*(i%3),y:(esBanner?472:lista.alto-265)-Math.floor(i/3)*(esBanner?258:280),escalaX:escala,escalaY:escala});
+  if(r.equipo){n.x+=105*escala;n.y+=130*escala;}
+  lista.hijos.push(n);
  });
  if(!esBanner)p.raiz.hijos.push(paginador(w,pag,paginas,375,todos?380:490));
  const texto=envolverTexto(o.detalle??'',undefined,58).join('\n');

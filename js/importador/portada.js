@@ -52,7 +52,6 @@ const fases = () => ({
   clave: [0.01, 0.03, t('Buscando la clave en la librería del juego…', 'Finding the key in the game library…')],
   recursos: [0.03, 0.72, t('Descifrando los recursos', 'Decrypting assets')],
   datos: [0.72, 1, t('Generando los datos del juego', 'Generating game data')],
-  respaldo: [0.03, 1, t('Añadiendo carteles del respaldo de descargas', 'Adding artwork from the download backup')],
 });
 const pasos = () => ({
   personajes: t('personajes', 'characters'), enemigos: t('enemigos', 'enemies'), animaciones: t('animaciones', 'animations'), misiones: t('misiones', 'quests'), ia: t('IA de los enemigos', 'enemy AI'),
@@ -68,7 +67,6 @@ function mostrarAvance(m, soloDatos) {
     let extra = '';
     if (m.fase === 'recursos' && m.archivos) extra = `: ${m.archivos.toLocaleString(idioma)} ${t('archivos', 'files')}`;
     if (m.fase === 'datos' && m.detalle) extra = `: ${pasos()[m.detalle] ?? m.detalle}`;
-    if (m.fase === 'respaldo') extra = `: ${(m.archivos ?? 0).toLocaleString(idioma)} ${t('archivos nuevos', 'new files')}`;
     return `${descripcion}${extra} (${Math.floor((m.fraccion ?? 0) * 100)} %)`;
   });
 }
@@ -133,10 +131,6 @@ async function pintarEstado() {
       return t(`Importado el ${f}: ${n} archivos (${fmtGB(e.bytes)}) de ${fuentes}.`,
         `Imported on ${f}: ${n} files (${fmtGB(e.bytes)}) from ${fuentes}.`);
     });
-    // D108: respaldo de descargas opcional.
-    texto('respaldo-estado', () => e.respaldo
-      ? t(`Respaldo añadido: ${e.respaldo.archivos.toLocaleString(idioma)} archivos.`, `Backup added: ${e.respaldo.archivos.toLocaleString(idioma)} files.`)
-      : t('Sin respaldo: los banners se ven sin cartel.', 'No backup: banners are shown without artwork.'));
   }
   const persistente = await navigator.storage?.persisted?.().catch(() => false);
   $('persistente').hidden = !e || persistente;
@@ -238,28 +232,6 @@ async function regenerar() {
   await pintarEstado();
 }
 
-/** D108: añade los carteles del respaldo de descargas (opcional). Con la clave de la APK guardada basta el
- *  respaldo; si no, hay que elegir también la APK (sólo se lee su librería). */
-async function anadirRespaldo(archivos) {
-  error(null);
-  if (!archivos.length) return;
-  try {
-    await registrarSW();
-    const { estado, segundos } = await trabajar({ tipo: 'respaldo', archivos });
-    const nuevos = estado.respaldo?.nuevos ?? 0;
-    barra(1, () => t(`Respaldo añadido en ${segundos} s: ${nuevos.toLocaleString(idioma)} archivos nuevos.`, `Backup added in ${segundos} s: ${nuevos.toLocaleString(idioma)} new files.`));
-    await avisarSW();
-  } catch (e) {
-    error(() => e.nombre === 'FaltaApk'
-      ? t('Para descifrar el respaldo hace falta la clave de tu APK. Pulsa otra vez «Añadir respaldo de descargas» y elige el respaldo y tu APK (saomd8.apks) a la vez.', 'The backup needs your APK key to be decrypted. Press “Add download backup” again and choose both the backup and your APK (saomd8.apks).')
-      : /quota/i.test(`${e.nombre} ${e.message}`)
-        ? t('El navegador no dejó guardar más (se quedó sin espacio). Lo añadido hasta ahora no se pierde; libera espacio y vuelve a intentarlo.', 'Your browser ran out of storage space. What was added so far is kept; free up space and try again.')
-        : t(`No se pudo añadir el respaldo: ${e.message}`, `Could not add the backup. Technical details: ${e.message}`));
-  }
-  $('respaldo').value = '';
-  await pintarEstado();
-}
-
 async function borrar() {
   if(trabajando)return error(()=>t('Espera a que termine la operación actual.','Wait for the current operation to finish.'));
   if (!confirm(t('¿Borrar los recursos importados de este navegador? (La partida no se borra.)', 'Delete the imported assets from this browser? (Your save will not be deleted.)'))) return;
@@ -309,8 +281,6 @@ $('archivo').onchange = () => texto('archivos-elegidos', () => {
 });
 $('importar').onclick = () => importar();
 $('regenerar').onclick = regenerar;
-$('elegir-respaldo').onclick = () => $('respaldo').click();
-$('respaldo').onchange = () => anadirRespaldo([...$('respaldo').files]);
 $('borrar').onclick = borrar;
 $('exportar-partida').onclick = exportarPartida;
 $('cargar-partida').onchange = (ev) => ev.target.files[0] && importarPartida(ev.target.files[0]);
@@ -318,7 +288,7 @@ const falta = faltaSoporte();
 if (falta.length) texto('soporte', () => t(`Este navegador no puede importar: falta ${faltaSoporte().join(', ')}.`, `This browser cannot import files: missing ${faltaSoporte().join(', ')}.`));
 
 // Para las pruebas (servidor.py --apk): __portada.importar([], ['/_apk/saomd8.apks']).
-window.__portada = { importar, regenerar, anadirRespaldo };
+window.__portada = { importar, regenerar };
 
 const e = await pintarEstado();
 if (e && ('serviceWorker' in navigator)) await registrarSW().catch(() => null);

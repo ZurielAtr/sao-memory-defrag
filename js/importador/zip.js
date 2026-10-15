@@ -108,7 +108,7 @@ export async function leerDirectorio(blob) {
 }
 
 /** [inicio, fin) de los datos comprimidos de una entrada (lee su cabecera local). */
-export async function rangoDatos(blob, e) {
+async function rangoDatos(blob, e) {
   const h = await trozo(blob, e.offsetLocal, e.offsetLocal + 30);
   if (u32(h, 0) !== SIG_LOCAL) throw new Error(`cabecera local dañada: ${e.nombre}`);
   const ini = e.offsetLocal + 30 + u16(h, 26) + u16(h, 28);
